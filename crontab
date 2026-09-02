@@ -1,0 +1,7 @@
+# Runs inside the container as PID 1's crond (see docker-entrypoint.sh).
+# Times are Europe/Amsterdam local time (baked into the image in the
+# Dockerfile), so this stays 18:00/18:15 local across the CET/CEST switch.
+# collect first, then report a few minutes later so it never races an
+# in-progress collect run.
+0 18 * * * . /etc/gunpla.env && /usr/local/bin/gunpla-collector collect >> /proc/1/fd/1 2>&1
+15 18 * * * . /etc/gunpla.env && /usr/local/bin/gunpla-collector report >> /proc/1/fd/1 2>&1

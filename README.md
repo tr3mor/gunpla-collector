@@ -1,0 +1,120 @@
+# gunpla-collector
+
+Tracks Gunpla model kit inventory and prices at online shops over time, and
+sends a daily Telegram summary of what's new, removed, or changed price.
+
+Currently supports:
+- [GeeksHeaven](https://www.geeksheaven.nl/gundam-model-kits/) (MG, HG, RG,
+  PG grades, prices in EUR)
+- [Gundam Store](https://gundam-store.com/collections/mg-master-grade) (MG,
+  HG, RG, PG grades, prices in USD)
+
+More shops can be added by implementing the `scraper.Scraper` interface —
+see `internal/scraper/geeksheaven.go` (Lightspeed eCom JSON API) or
+`internal/scraper/gundamstore.go` (Shopify `products.json` API) as
+templates.
+
+## How it works
+
+- `gunpla-collector collect [--shop=geeksheaven]` fetches the current
+  catalog (name, price, stock) from each shop's category listing JSON API
+  and stores a snapshot, keeping full price history.
+- `gunpla-collector report [--shop=geeksheaven]` diffs the latest snapshot
+  against the previous one and sends a Telegram message: new sets, removed
+  sets, and price changes.
+- Both default to running against every active shop in the database when
+  `--shop` is omitted and `GUNPLA_SHOPS` is unset.
+
+GeeksHeaven runs on Lightspeed eCom (Shoplightspeed), whose storefront
+supports a `?format=json` API on every category page. Gundam Store runs on
+Shopify, whose storefront exposes the same collection-page data as JSON via
+`/collections/<handle>/products.json`. Both scrapers read that JSON
+directly instead of parsing HTML or driving a headless browser.
+
+## Telegram bot setup
+
+1. In Telegram, message **@BotFather** → `/newbot` → follow the prompts →
+   copy the **bot token** it gives you (looks like
+   `123456789:ABCdefGhIJKlmnoPQRstuVWXyz`).
+2. Message your new bot anything (e.g. "hi") so it can see you.
+3. Visit `https://api.telegram.org/bot<TOKEN>/getUpdates` in a browser and
+   read `message.chat.id` from the JSON response — that's your **chat ID**.
+4. Put both values in `.env` (copy `.env.example`) or your environment —
+   see Configuration below.
+
+## Configuration
+
+Environment variables:
+
+| Variable                     | Default            | Notes                                                    |
+|-------------------------------|---------------------|-----------------------------------------------------------|
+| `GUNPLA_DB_PATH`               | `/data/gunpla.db`  | SQLite file path — must be on a mounted volume in Docker |
+| `GUNPLA_TELEGRAM_BOT_TOKEN`    | —                   | required for `report`                                    |
+| `GUNPLA_TELEGRAM_CHAT_ID`      | —                   | required for `report`                                    |
+| `GUNPLA_SHOPS`                 | (all active shops) | comma-separated slugs, e.g. `geeksheaven,gundamstore`     |
+| `GUNPLA_LOG_LEVEL`             | `info`              | not currently wired to a level filter                    |
+
+## Running locally
+
+```sh
+go build -o gunpla-collector ./cmd/gunpla-collector
+GUNPLA_DB_PATH=./gunpla.db ./gunpla-collector collect --shop=geeksheaven
+
+GUNPLA_DB_PATH=./gunpla.db \
+GUNPLA_TELEGRAM_BOT_TOKEN=... \
+GUNPLA_TELEGRAM_CHAT_ID=... \
+./gunpla-collector report --shop=geeksheaven
+```
+
+Inspect the database directly:
+
+```sh
+sqlite3 ./gunpla.db "select count(*) from sets where is_active=1"
+sqlite3 ./gunpla.db "select name, price_cents from price_history order by id desc limit 5"
+```
+
+## Running with Docker
+
+```sh
+cp .env.example .env   # fill in your bot token + chat id
+docker compose up -d --build
+```
+
+Cron runs *inside* the container (busybox `crond` as PID 1, see
+`crontab` and `docker-entrypoint.sh`): `collect` at 18:00, `report` at
+18:15, daily, both in Europe/Amsterdam local time (baked into the image, so
+it stays correct across the CET/CEST switch). The SQLite file lives on the
+`gunpla-data` named volume so it survives rebuilds.
+
+`report` always sends a message, even when nothing changed ("No changes
+today.") — useful for confirming the daily job actually ran, especially
+right after first setting this up.
+
+To trigger a run manually without waiting for cron:
+
+```sh
+docker compose exec gunpla-collector gunpla-collector collect --shop=geeksheaven
+docker compose exec gunpla-collector gunpla-collector report --shop=geeksheaven
+```
+
+## Testing
+
+```sh
+go test ./...
+```
+
+Covers price parsing (string and float→cents), the GeeksHeaven and Gundam
+Store JSON API pagination/grade-filtering logic (against a local `httptest`
+server, no network), the new/removed/price-change diff logic and Telegram
+message formatting including per-shop currency symbols (synthetic data),
+the sanity guard that stops a broken scrape from being interpreted as mass
+removal, and — against a real temporary SQLite file — the atomic
+collect-run transaction (`store.ApplyRun`) and foreign-key enforcement.
+
+## Out of scope for now
+
+- Multi-shop cheapest-price query (schema supports it via `price_history`
+  being shop-attributed and append-only; the query/report itself is future
+  work).
+- Any UI — this is a headless daily job + Telegram notifications only.
+- Matching the same set across different shops (name/EAN normalization).
