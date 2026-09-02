@@ -7,7 +7,6 @@ services:
       GUNPLA_TELEGRAM_BOT_TOKEN: ${GUNPLA_TELEGRAM_BOT_TOKEN}
       GUNPLA_TELEGRAM_CHAT_ID: ${GUNPLA_TELEGRAM_CHAT_ID}
       GUNPLA_SHOPS: geeksheaven
-      GUNPLA_LOG_LEVEL: info
     volumes:
       - gunpla-data:/data
 

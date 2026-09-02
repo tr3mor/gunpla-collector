@@ -12,7 +12,6 @@ type Config struct {
 	TelegramToken  string
 	TelegramChatID string
 	Shops          []string // empty = all active shops
-	LogLevel       string
 }
 
 func Load() Config {
@@ -21,7 +20,6 @@ func Load() Config {
 		TelegramToken:  os.Getenv("GUNPLA_TELEGRAM_BOT_TOKEN"),
 		TelegramChatID: os.Getenv("GUNPLA_TELEGRAM_CHAT_ID"),
 		Shops:          parseShops(os.Getenv("GUNPLA_SHOPS")),
-		LogLevel:       getEnv("GUNPLA_LOG_LEVEL", "info"),
 	}
 }
 

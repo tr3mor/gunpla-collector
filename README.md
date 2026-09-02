@@ -52,7 +52,6 @@ Environment variables:
 | `GUNPLA_TELEGRAM_BOT_TOKEN`    | —                   | required for `report`                                    |
 | `GUNPLA_TELEGRAM_CHAT_ID`      | —                   | required for `report`                                    |
 | `GUNPLA_SHOPS`                 | (all active shops) | comma-separated slugs, e.g. `geeksheaven,gundamstore`     |
-| `GUNPLA_LOG_LEVEL`             | `info`              | not currently wired to a level filter                    |
 
 ## Running locally
 
@@ -110,11 +109,3 @@ message formatting including per-shop currency symbols (synthetic data),
 the sanity guard that stops a broken scrape from being interpreted as mass
 removal, and — against a real temporary SQLite file — the atomic
 collect-run transaction (`store.ApplyRun`) and foreign-key enforcement.
-
-## Out of scope for now
-
-- Multi-shop cheapest-price query (schema supports it via `price_history`
-  being shop-attributed and append-only; the query/report itself is future
-  work).
-- Any UI — this is a headless daily job + Telegram notifications only.
-- Matching the same set across different shops (name/EAN normalization).
