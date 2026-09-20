@@ -43,6 +43,25 @@ func FormatBaseline(shopName string, setsFound int) string {
 		shopName, setsFound)
 }
 
+// FormatFailure formats the "latest collect run failed (or appears stuck)"
+// alert. Sent on every report run until a collect succeeds again — a
+// scrape failure needs to keep being noticed, not fade into a one-time
+// log line nobody reads.
+func FormatFailure(shopName, reason string) string {
+	return fmt.Sprintf("⚠️ *%s* — collect failed\n%s", markdownEscaper.Replace(shopName), markdownEscaper.Replace(truncate(reason, 500)))
+}
+
+// truncate shortens s to at most n runes, appending an ellipsis if it was
+// cut. Used to keep scraper error text (which may embed a URL or response
+// body) from blowing past Telegram's message limit on its own.
+func truncate(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
+}
+
 // FormatDiff formats the daily new/removed/price-change report (spec §5
 // steps 2-6). Sections with nothing to show are skipped; if there's nothing
 // at all, a short "no changes" message is returned.

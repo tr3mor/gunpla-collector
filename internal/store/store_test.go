@@ -56,9 +56,9 @@ func TestApplyRun_PersistsSetsPriceHistoryAndFinishesRun(t *testing.T) {
 		t.Fatalf("ApplyRun: %v", err)
 	}
 
-	current, previous, err := s.TwoMostRecentSuccessfulRuns(ctx, shop.ID)
+	current, previous, err := s.LatestUnreportedRun(ctx, shop.ID)
 	if err != nil {
-		t.Fatalf("TwoMostRecentSuccessfulRuns: %v", err)
+		t.Fatalf("LatestUnreportedRun: %v", err)
 	}
 	if current == nil || current.ID != runID || current.Status != "success" {
 		t.Fatalf("unexpected current run: %+v", current)
@@ -155,5 +155,163 @@ func TestApplyRun_RollsBackOnError(t *testing.T) {
 	}
 	if count != 0 {
 		t.Errorf("expected rollback to leave 0 sets for shop, got %d", count)
+	}
+}
+
+// TestLatestRun_NoRunsYet verifies LatestRun reports ok=false for a shop
+// that has never had a collect run — the case reporter.Run treats as a
+// hard error ("run collect first"), distinct from "everything has already
+// been reported" (see TestLatestUnreportedRun_AllReported).
+func TestLatestRun_NoRunsYet(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	shop, err := s.GetOrCreateShop(ctx, "test-shop", "Test Shop", "https://example.com")
+	if err != nil {
+		t.Fatalf("GetOrCreateShop: %v", err)
+	}
+	run, ok, err := s.LatestRun(ctx, shop.ID)
+	if err != nil {
+		t.Fatalf("LatestRun: %v", err)
+	}
+	if ok || run != nil {
+		t.Fatalf("LatestRun = (%+v, %v), want (nil, false)", run, ok)
+	}
+}
+
+// TestLatestRun_ReturnsMostRecentRegardlessOfStatus verifies LatestRun
+// picks up a failed run even when an earlier successful run exists —
+// reporter.Run relies on this to detect a broken collect job.
+func TestLatestRun_ReturnsMostRecentRegardlessOfStatus(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	shop, err := s.GetOrCreateShop(ctx, "test-shop", "Test Shop", "https://example.com")
+	if err != nil {
+		t.Fatalf("GetOrCreateShop: %v", err)
+	}
+	okRunID, err := s.StartRun(ctx, shop.ID, "2026-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("StartRun 1: %v", err)
+	}
+	if err := s.FinishRunSuccess(ctx, okRunID, "2026-01-01T00:01:00Z", 5); err != nil {
+		t.Fatalf("FinishRunSuccess: %v", err)
+	}
+	failedRunID, err := s.StartRun(ctx, shop.ID, "2026-01-02T00:00:00Z")
+	if err != nil {
+		t.Fatalf("StartRun 2: %v", err)
+	}
+	if err := s.FinishRunFailed(ctx, failedRunID, "2026-01-02T00:01:00Z", "scraper broke"); err != nil {
+		t.Fatalf("FinishRunFailed: %v", err)
+	}
+
+	run, ok, err := s.LatestRun(ctx, shop.ID)
+	if err != nil {
+		t.Fatalf("LatestRun: %v", err)
+	}
+	if !ok || run.ID != failedRunID || run.Status != "failed" || !run.Error.Valid || run.Error.String != "scraper broke" {
+		t.Fatalf("LatestRun = %+v, want the failed run", run)
+	}
+}
+
+// TestLatestUnreportedRun_AllReported verifies that once MarkReported has
+// stamped every successful run, LatestUnreportedRun reports current=nil —
+// this is what makes report idempotent (running it twice in a row sends
+// nothing the second time).
+func TestLatestUnreportedRun_AllReported(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	shop, err := s.GetOrCreateShop(ctx, "test-shop", "Test Shop", "https://example.com")
+	if err != nil {
+		t.Fatalf("GetOrCreateShop: %v", err)
+	}
+	runID, err := s.StartRun(ctx, shop.ID, "2026-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("StartRun: %v", err)
+	}
+	sets := []scraper.ScrapedSet{
+		{ExternalID: "ext-1", URL: "u1", Name: "Kit One", Grade: "MG", PriceCents: 5000, Currency: "EUR"},
+	}
+	if err := s.ApplyRun(ctx, shop.ID, runID, sets, "2026-01-01T00:01:00Z"); err != nil {
+		t.Fatalf("ApplyRun: %v", err)
+	}
+
+	if err := s.MarkReported(ctx, shop.ID, "2026-01-01T00:02:00Z"); err != nil {
+		t.Fatalf("MarkReported: %v", err)
+	}
+
+	current, previous, err := s.LatestUnreportedRun(ctx, shop.ID)
+	if err != nil {
+		t.Fatalf("LatestUnreportedRun: %v", err)
+	}
+	if current != nil {
+		t.Fatalf("current = %+v, want nil (already reported)", current)
+	}
+	if previous == nil || previous.ID != runID {
+		t.Fatalf("previous = %+v, want the reported run", previous)
+	}
+}
+
+// TestLatestUnreportedRun_SkipsIntermediateRuns verifies that when
+// `collect` has run multiple times since the last `report`, the next
+// report diffs against the last *reported* run (skipping the runs in
+// between) rather than replaying each one individually, and MarkReported
+// then marks all of them reported at once so they don't pile up.
+func TestLatestUnreportedRun_SkipsIntermediateRuns(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	shop, err := s.GetOrCreateShop(ctx, "test-shop", "Test Shop", "https://example.com")
+	if err != nil {
+		t.Fatalf("GetOrCreateShop: %v", err)
+	}
+
+	run1, err := s.StartRun(ctx, shop.ID, "2026-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("StartRun 1: %v", err)
+	}
+	if err := s.ApplyRun(ctx, shop.ID, run1, nil, "2026-01-01T00:01:00Z"); err != nil {
+		t.Fatalf("ApplyRun 1: %v", err)
+	}
+	if err := s.MarkReported(ctx, shop.ID, "2026-01-01T00:02:00Z"); err != nil {
+		t.Fatalf("MarkReported after run1: %v", err)
+	}
+
+	run2, err := s.StartRun(ctx, shop.ID, "2026-01-02T00:00:00Z")
+	if err != nil {
+		t.Fatalf("StartRun 2: %v", err)
+	}
+	if err := s.ApplyRun(ctx, shop.ID, run2, nil, "2026-01-02T00:01:00Z"); err != nil {
+		t.Fatalf("ApplyRun 2: %v", err)
+	}
+	run3, err := s.StartRun(ctx, shop.ID, "2026-01-03T00:00:00Z")
+	if err != nil {
+		t.Fatalf("StartRun 3: %v", err)
+	}
+	if err := s.ApplyRun(ctx, shop.ID, run3, nil, "2026-01-03T00:01:00Z"); err != nil {
+		t.Fatalf("ApplyRun 3: %v", err)
+	}
+
+	current, previous, err := s.LatestUnreportedRun(ctx, shop.ID)
+	if err != nil {
+		t.Fatalf("LatestUnreportedRun: %v", err)
+	}
+	if current == nil || current.ID != run3 {
+		t.Fatalf("current = %+v, want run3 (%d)", current, run3)
+	}
+	if previous == nil || previous.ID != run1 {
+		t.Fatalf("previous = %+v, want run1 (%d)", previous, run1)
+	}
+
+	if err := s.MarkReported(ctx, shop.ID, "2026-01-03T00:02:00Z"); err != nil {
+		t.Fatalf("MarkReported: %v", err)
+	}
+	current, _, err = s.LatestUnreportedRun(ctx, shop.ID)
+	if err != nil {
+		t.Fatalf("LatestUnreportedRun after MarkReported: %v", err)
+	}
+	if current != nil {
+		t.Fatalf("current = %+v, want nil — run2 and run3 should both be marked reported", current)
 	}
 }

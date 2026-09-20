@@ -19,9 +19,13 @@ templates.
 - `gunpla-collector collect [--shop=geeksheaven]` fetches the current
   catalog (name, price, stock) from each shop's category listing JSON API
   and stores a snapshot, keeping full price history.
-- `gunpla-collector report [--shop=geeksheaven]` diffs the latest snapshot
-  against the previous one and sends a Telegram message: new sets, removed
-  sets, and price changes.
+- `gunpla-collector report [--shop=geeksheaven]` diffs the latest
+  successful collect run against the last one it already reported on, and
+  sends a Telegram message: new sets, removed sets, and price changes.
+  It's idempotent — running it again before the next `collect` finds
+  nothing new and sends nothing. If the most recent `collect` run failed
+  (or crashed without recording a failure), it sends a warning instead,
+  every time `report` runs, until a `collect` succeeds again.
 - Both default to running against every active shop in the database when
   `--shop` is omitted and `GUNPLA_SHOPS` is unset.
 
@@ -85,9 +89,10 @@ Cron runs *inside* the container (busybox `crond` as PID 1, see
 it stays correct across the CET/CEST switch). The SQLite file lives on the
 `gunpla-data` named volume so it survives rebuilds.
 
-`report` always sends a message, even when nothing changed ("No changes
-today.") — useful for confirming the daily job actually ran, especially
-right after first setting this up.
+`report` sends a "No changes today." message when there's something new to
+report but nothing in it actually changed; it sends nothing at all when
+there's nothing new to report (e.g. run it twice in a row). If `collect`
+failed, `report` sends a warning instead — see "How it works" above.
 
 To trigger a run manually without waiting for cron:
 
@@ -107,5 +112,7 @@ Store JSON API pagination/grade-filtering logic (against a local `httptest`
 server, no network), the new/removed/price-change diff logic and Telegram
 message formatting including per-shop currency symbols (synthetic data),
 the sanity guard that stops a broken scrape from being interpreted as mass
-removal, and — against a real temporary SQLite file — the atomic
-collect-run transaction (`store.ApplyRun`) and foreign-key enforcement.
+removal, the report idempotency logic (unreported-run tracking, skipping
+already-reported runs, alerting on a failed or stuck collect run), and —
+against a real temporary SQLite file — the atomic collect-run transaction
+(`store.ApplyRun`), foreign-key enforcement, and schema migrations.

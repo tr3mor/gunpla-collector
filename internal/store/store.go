@@ -42,6 +42,7 @@ type Run struct {
 	Status     string
 	SetsFound  sql.NullInt64
 	Error      sql.NullString
+	ReportedAt sql.NullString
 }
 
 // ReportItem is a set + the price it had at some run, used for "new" and
@@ -316,37 +317,74 @@ func (s *Store) DeactivateMissing(ctx context.Context, shopID int64, seenExterna
 	return nil
 }
 
-// TwoMostRecentSuccessfulRuns returns the current (most recent) and previous
-// successful runs for a shop. previous is nil if there's only one (or zero).
-func (s *Store) TwoMostRecentSuccessfulRuns(ctx context.Context, shopID int64) (current *Run, previous *Run, err error) {
-	rows, err := s.conn.QueryContext(ctx,
-		`SELECT id, shop_id, started_at, finished_at, status, sets_found, error
-		 FROM scrape_runs WHERE shop_id = ? AND status = 'success'
-		 ORDER BY id DESC LIMIT 2`, shopID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("query recent runs: %w", err)
-	}
-	defer rows.Close()
+const runColumns = `id, shop_id, started_at, finished_at, status, sets_found, error, reported_at`
 
-	var runs []Run
-	for rows.Next() {
-		var r Run
-		if err := rows.Scan(&r.ID, &r.ShopID, &r.StartedAt, &r.FinishedAt, &r.Status, &r.SetsFound, &r.Error); err != nil {
-			return nil, nil, err
+func scanRun(row interface{ Scan(...any) error }) (*Run, error) {
+	var r Run
+	if err := row.Scan(&r.ID, &r.ShopID, &r.StartedAt, &r.FinishedAt, &r.Status, &r.SetsFound, &r.Error, &r.ReportedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
 		}
-		runs = append(runs, r)
+		return nil, err
 	}
-	if err := rows.Err(); err != nil {
+	return &r, nil
+}
+
+// latestRunWhere returns the most recent run for shopID matching an
+// additional (trusted, not user-input) SQL condition, or nil if none
+// matches.
+func (s *Store) latestRunWhere(ctx context.Context, shopID int64, cond string) (*Run, error) {
+	row := s.conn.QueryRowContext(ctx,
+		`SELECT `+runColumns+` FROM scrape_runs WHERE shop_id = ? AND `+cond+` ORDER BY id DESC LIMIT 1`,
+		shopID)
+	r, err := scanRun(row)
+	if err != nil {
+		return nil, fmt.Errorf("query latest run: %w", err)
+	}
+	return r, nil
+}
+
+// LatestRun returns the most recent run for shopID regardless of status,
+// used to detect a failed or stuck collect run (see reporter.Run). ok is
+// false if the shop has no runs at all yet.
+func (s *Store) LatestRun(ctx context.Context, shopID int64) (run *Run, ok bool, err error) {
+	r, err := s.latestRunWhere(ctx, shopID, `1 = 1`)
+	if err != nil {
+		return nil, false, err
+	}
+	return r, r != nil, nil
+}
+
+// LatestUnreportedRun returns the most recent successful run for shopID
+// that hasn't been reported yet (current, nil if everything successful has
+// already been reported — i.e. nothing new to report), and the most
+// recent run that has been reported (previous, nil on the very first
+// report — use FormatBaseline instead of a diff).
+func (s *Store) LatestUnreportedRun(ctx context.Context, shopID int64) (current *Run, previous *Run, err error) {
+	current, err = s.latestRunWhere(ctx, shopID, `status = 'success' AND reported_at IS NULL`)
+	if err != nil {
 		return nil, nil, err
 	}
-	if len(runs) == 0 {
-		return nil, nil, nil
-	}
-	current = &runs[0]
-	if len(runs) > 1 {
-		previous = &runs[1]
+	previous, err = s.latestRunWhere(ctx, shopID, `status = 'success' AND reported_at IS NOT NULL`)
+	if err != nil {
+		return nil, nil, err
 	}
 	return current, previous, nil
+}
+
+// MarkReported stamps reported_at = now on every successful run for shopID
+// that hasn't been reported yet. Called once a report has been sent
+// successfully. This marks not just the run that was diffed but any older
+// unreported successful runs too, so the next report's diff always starts
+// from the last *reported* run instead of replaying every run one by one.
+func (s *Store) MarkReported(ctx context.Context, shopID int64, now string) error {
+	_, err := s.conn.ExecContext(ctx,
+		`UPDATE scrape_runs SET reported_at = ? WHERE shop_id = ? AND status = 'success' AND reported_at IS NULL`,
+		now, shopID)
+	if err != nil {
+		return fmt.Errorf("mark reported: %w", err)
+	}
+	return nil
 }
 
 // NewSets returns sets that have price_history in currentRunID but not in
