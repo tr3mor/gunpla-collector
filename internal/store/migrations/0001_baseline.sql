@@ -1,3 +1,8 @@
+-- Migration 1: baseline schema. Every statement is IF NOT EXISTS, so this
+-- is a safe no-op against a database that already has these tables but
+-- PRAGMA user_version = 0 — i.e. every database created before migrations
+-- existed. See migrate.go.
+
 CREATE TABLE IF NOT EXISTS shops (
     id          INTEGER PRIMARY KEY,
     slug        TEXT NOT NULL UNIQUE,

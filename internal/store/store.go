@@ -5,7 +5,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"fmt"
 	"strings"
 
@@ -13,9 +12,6 @@ import (
 
 	"gunpla-collector/internal/scraper"
 )
-
-//go:embed schema.sql
-var schemaSQL string
 
 // dbtx is satisfied by both *sql.DB and *sql.Tx, so query methods below can
 // run either directly against the pool or scoped to a transaction.
@@ -77,9 +73,9 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 	db.SetMaxOpenConns(1) // avoid SQLITE_BUSY: single-writer file, cron-driven, not a concurrent service
-	if _, err := db.Exec(schemaSQL); err != nil {
+	if err := migrate(context.Background(), db); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("apply schema: %w", err)
+		return nil, fmt.Errorf("apply migrations: %w", err)
 	}
 	return &Store{db: db, conn: db}, nil
 }
