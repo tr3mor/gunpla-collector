@@ -16,9 +16,8 @@ type ScrapedSet struct {
 	PriceCents int
 	Currency   string
 	InStock    *bool
-	// EAN and SKU are canonical product identifiers, kept for a future
-	// cross-shop "same kit at two shops" feature — not every shop exposes
-	// both, so either may be empty.
+	// EAN/SKU: canonical product identifiers, kept for a future cross-shop
+	// matching feature. Not every shop exposes both, so either may be empty.
 	EAN string
 	SKU string
 }
@@ -43,9 +42,8 @@ func Get(slug string) (Scraper, bool) {
 	return s, ok
 }
 
-// All returns every registered scraper, sorted by slug — registry is a map,
-// so without sorting the order (and therefore request sequencing in
-// collect, and shop iteration order in report) would vary run to run.
+// All returns every registered scraper, sorted by slug (registry is a map,
+// so iteration order would otherwise vary run to run).
 func All() []Scraper {
 	all := make([]Scraper, 0, len(registry))
 	for _, s := range registry {

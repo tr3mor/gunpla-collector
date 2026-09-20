@@ -9,10 +9,8 @@ import (
 	"time"
 )
 
-// TestHTTPFetcher_Get_RejectsOversizedBody verifies get() refuses a
-// response larger than its configured cap instead of buffering it fully —
-// a defense against an endpoint returning something unexpectedly huge
-// (an error page, a misconfigured redirect target).
+// get() must refuse a response over its configured cap instead of
+// buffering it fully.
 func TestHTTPFetcher_Get_RejectsOversizedBody(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(strings.Repeat("x", 101)))
@@ -25,8 +23,7 @@ func TestHTTPFetcher_Get_RejectsOversizedBody(t *testing.T) {
 	}
 }
 
-// TestHTTPFetcher_Get_AllowsBodyAtExactCap verifies the cap is inclusive —
-// a body of exactly maxBody bytes is not rejected as "oversized".
+// The cap is inclusive: exactly maxBody bytes must not be rejected.
 func TestHTTPFetcher_Get_AllowsBodyAtExactCap(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(strings.Repeat("x", 100)))
@@ -43,11 +40,8 @@ func TestHTTPFetcher_Get_AllowsBodyAtExactCap(t *testing.T) {
 	}
 }
 
-// TestHTTPFetcher_Get_RespectsCancelledContext verifies get() returns
-// promptly when ctx is already cancelled instead of waiting out its
-// configured delay — this is what lets SIGTERM (or the whole-run timeout
-// in main.go) interrupt a scraper mid-crawl instead of only being noticed
-// after the next request goes out.
+// get() must return promptly on an already-cancelled ctx instead of
+// waiting out its delay first.
 func TestHTTPFetcher_Get_RespectsCancelledContext(t *testing.T) {
 	f := &httpFetcher{
 		httpClient: http.DefaultClient,
@@ -71,8 +65,7 @@ func TestHTTPFetcher_Get_RespectsCancelledContext(t *testing.T) {
 	}
 }
 
-// TestSleepCtx_ReturnsEarlyOnCancellation is the same guarantee as
-// TestHTTPFetcher_Get_RespectsCancelledContext, at the sleepCtx level.
+// Same guarantee as above, at the sleepCtx level.
 func TestSleepCtx_ReturnsEarlyOnCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

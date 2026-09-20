@@ -16,16 +16,13 @@ import (
 const defaultUserAgent = "gunpla-collector/1.0 (+https://github.com/; contact via shop enquiry form)"
 
 // defaultMaxBody caps a single response body. Every endpoint we read is a
-// paginated category/collection listing that should be at most a few
-// hundred KB; a much larger response means something is wrong (an error
-// page, an infinite redirect target, a misconfigured endpoint) and reading
-// it fully would be a needless memory/time sink.
+// paginated listing that should be at most a few hundred KB; much bigger
+// than that means something's wrong (an error page, a bad redirect).
 const defaultMaxBody = 8 << 20 // 8 MiB
 
 // httpFetcher is the HTTP plumbing shared by every shop scraper: a
-// rate-limited, size-capped JSON GET. Each scraper embeds one, configured
-// with its own delay and User-Agent, and adds only the URL construction
-// and response-shape decoding specific to that shop's API.
+// rate-limited, size-capped JSON GET. Each scraper embeds one and adds
+// only the URL construction and response-shape decoding for its own API.
 type httpFetcher struct {
 	httpClient *http.Client
 	userAgent  string
@@ -37,9 +34,7 @@ type httpFetcher struct {
 }
 
 // get performs one rate-limited GET: delay+jitter before every request
-// after the first, a check that the response is 200, and a cap on the
-// body size. Honors ctx cancellation both while waiting out the delay and
-// while the request is in flight.
+// after the first, then a 200 check and a body size cap.
 func (f *httpFetcher) get(ctx context.Context, url string) ([]byte, error) {
 	if f.requested {
 		if err := sleepCtx(ctx, f.delay+randJitter(f.jitter)); err != nil {
@@ -68,9 +63,8 @@ func (f *httpFetcher) get(ctx context.Context, url string) ([]byte, error) {
 	if maxBody <= 0 {
 		maxBody = defaultMaxBody
 	}
-	// Read one byte past the cap so we can tell "exactly at the limit"
-	// apart from "truncated" without buffering the whole (potentially huge)
-	// body first.
+	// Read one byte past the cap to tell "at the limit" from "truncated"
+	// without buffering a potentially huge body first.
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	if err != nil {
 		return nil, fmt.Errorf("read response from %s: %w", url, err)
@@ -101,9 +95,8 @@ func randJitter(max time.Duration) time.Duration {
 }
 
 // sleepCtx waits out d, returning early with ctx's error if ctx is
-// cancelled first — unlike a bare time.Sleep, a shutdown signal (SIGTERM)
-// or a whole-run timeout is noticed immediately instead of only after the
-// next HTTP request.
+// cancelled first — so SIGTERM or a timeout is noticed right away instead
+// of only after the next request.
 func sleepCtx(ctx context.Context, d time.Duration) error {
 	if d <= 0 {
 		return ctx.Err()

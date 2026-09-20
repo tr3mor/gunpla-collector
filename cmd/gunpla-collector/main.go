@@ -23,12 +23,9 @@ import (
 	"gunpla-collector/internal/telegram"
 )
 
-// Default whole-run timeouts, used when GUNPLA_RUN_TIMEOUT isn't set. Each
-// bounds the entire `collect`/`report` invocation (every shop, every
-// request) — a backstop against a hung request or stalled Telegram send
-// leaving a process (and its SQLite connection) alive indefinitely.
-// collect's is generous because it makes many rate-limited HTTP requests
-// across shops; report's is short because it's a handful of Telegram sends.
+// Default whole-run timeouts when GUNPLA_RUN_TIMEOUT isn't set — a
+// backstop against a hung request or stalled Telegram send. collect gets
+// more room since it makes many rate-limited requests across shops.
 const (
 	defaultCollectTimeout = 30 * time.Minute
 	defaultReportTimeout  = 5 * time.Minute
@@ -143,16 +140,11 @@ func run(args []string) error {
 	panic("unreachable: cmd validated to be collect or report above")
 }
 
-// resolveShops determines which shops to operate on: -shop flag wins,
-// then GUNPLA_SHOPS, then every active shop in the DB that also has a
-// scraper registered in this binary. Shops named by flag or env var are
-// registered (created) in the DB on first use, using the registered
-// scraper's shop metadata.
-//
-// The registered-scraper filter on the "no explicit selection" path
-// matters once a shop is retired from the binary: without it, collect
-// would skip the orphaned shop with a warning every run, and report would
-// keep sending it a stale diff forever, both silently.
+// resolveShops picks which shops to run: -shop flag wins, then
+// GUNPLA_SHOPS, then every active shop that still has a scraper
+// registered in this binary — so retiring a shop from the code stops it
+// being collected/reported without a DB change too. Shops named by flag
+// or env var get registered in the DB on first use.
 func resolveShops(ctx context.Context, db *store.Store, cfg config.Config, shopFlag string) ([]store.Shop, error) {
 	var slugs []string
 	if shopFlag != "" {
@@ -177,10 +169,9 @@ func resolveShops(ctx context.Context, db *store.Store, cfg config.Config, shopF
 		return shops, nil
 	}
 
-	// No explicit selection: ensure every registered scraper has a shop
-	// row (scraper.All() is sorted by slug, so this and the result below
-	// are both deterministically ordered), then run every active shop that
-	// still has a scraper registered.
+	// No explicit selection: register every scraper's shop row (sorted by
+	// slug for deterministic order), then keep only the active ones we
+	// still have a scraper for.
 	for _, s := range scraper.All() {
 		if _, err := db.GetOrCreateShop(ctx, s.ShopSlug(), s.ShopName(), s.BaseURL()); err != nil {
 			return nil, err
@@ -221,16 +212,13 @@ type parsedFlags struct {
 	force bool
 }
 
-// parseFlags parses args (everything after the subcommand) for cmd.
-// A returned error wrapping flag.ErrHelp means -h/-help was given —
-// not a real error, but nothing left to run; the caller decides how to
-// present that.
+// parseFlags parses everything after the subcommand. An error wrapping
+// flag.ErrHelp means -h was given, not a real failure — the caller
+// decides how to present that.
 //
-// Split out from run() so it's testable without touching the DB or
-// network: flag.NewFlagSet accepts both "-name value" and "-name=value"
-// (and "--name"/"--name=value" — it strips one or two leading dashes
-// identically), which also fixes the old hand-rolled parser silently
-// ignoring the space-separated form.
+// Split out from run() so it's testable without touching the DB. Using
+// flag.NewFlagSet also fixes the old parser silently ignoring "-shop x"
+// (it only understood "-shop=x").
 func parseFlags(cmd string, args []string) (parsedFlags, error) {
 	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
 	fs.SetOutput(io.Discard) // run() formats errors/usage itself

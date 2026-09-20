@@ -6,9 +6,8 @@ services:
       GUNPLA_DB_PATH: /data/gunpla.db
       GUNPLA_TELEGRAM_BOT_TOKEN: ${GUNPLA_TELEGRAM_BOT_TOKEN}
       GUNPLA_TELEGRAM_CHAT_ID: ${GUNPLA_TELEGRAM_CHAT_ID}
-      # Unset (or set in .env) restricts to specific shops, e.g.
-      # GUNPLA_SHOPS=geeksheaven,gundamstore. Empty/unset here means "every
-      # shop this binary has a scraper registered for" (see README).
+      # Set in .env to restrict to specific shops, e.g.
+      # GUNPLA_SHOPS=geeksheaven,gundamstore. Empty means "all" (see README).
       GUNPLA_SHOPS: ${GUNPLA_SHOPS:-}
     volumes:
       - gunpla-data:/data

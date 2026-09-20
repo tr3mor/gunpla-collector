@@ -14,15 +14,11 @@ type Config struct {
 	TelegramToken  string
 	TelegramChatID string
 	Shops          []string // empty = all active shops
-	// RunTimeout overrides how long a single `collect` or `report`
-	// invocation is allowed to run before its context is cancelled. Zero
-	// means "use the command's own default" (see main.go) — a whole-run
-	// backstop against a hung HTTP request or a stalled Telegram send,
-	// distinct from (and larger than) any single request's own timeout.
+	// RunTimeout bounds a whole collect/report invocation. Zero means "use
+	// the command's own default" (see main.go).
 	RunTimeout time.Duration
-	// Force is the env-var equivalent of collect's -force flag, so the
-	// sanity guard can be overridden from `docker compose exec` without
-	// editing the container's command.
+	// Force is the env-var equivalent of collect's -force flag, for
+	// overriding the sanity guard from `docker compose exec`.
 	Force bool
 }
 
@@ -37,18 +33,16 @@ func Load() Config {
 	}
 }
 
-// parseBool is lenient the same way parseRunTimeout is: unset or
-// unparsable is just "false", not an error this package has no logger to
-// report through.
+// parseBool treats unset or unparsable as false — this package has no
+// logger to report a bad value through.
 func parseBool(raw string) bool {
 	b, err := strconv.ParseBool(strings.TrimSpace(raw))
 	return err == nil && b
 }
 
-// parseRunTimeout parses a Go duration string (e.g. "45m", "1h"). An empty
-// or unparsable value returns 0, meaning "use the command's default" — this
-// package has no logger to report a malformed value through, so a typo
-// silently falls back rather than failing the whole run.
+// parseRunTimeout parses a Go duration string (e.g. "45m", "1h"). Empty or
+// unparsable falls back to 0 ("use the command's default") rather than
+// failing the run over a typo.
 func parseRunTimeout(raw string) time.Duration {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {

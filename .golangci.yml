@@ -1,25 +1,19 @@
 version: "2"
 
 # Default linter set (errcheck, govet, ineffassign, staticcheck, unused).
-# gosec is intentionally left disabled — this isn't handling untrusted
-# input in a way that warrants it, and its false-positive rate on a
-# project this size isn't worth the noise.
+# gosec stays off — no untrusted-input handling here that warrants it.
 linters:
   enable:
     - errcheck
   exclusions:
     rules:
-      # httptest handlers writing canned JSON, and test-only cleanup
-      # Close() calls, aren't worth asserting on — a failed write to a
-      # test response recorder isn't a bug the test needs to catch.
+      # Test files: canned httptest writes and cleanup Close() calls
+      # aren't worth asserting on.
       - path: _test\.go
         linters:
           - errcheck
-      # A deferred Close()/Rollback() whose error is dropped is the
-      # standard Go idiom here: the operation already succeeded (Close on
-      # a response body / row set we're done reading) or the transaction
-      # is already being abandoned on another error (Rollback after a
-      # failed step) — the deferred call's own error adds nothing actionable.
+      # A deferred Close()/Rollback() with a dropped error is the normal
+      # Go idiom — the op already succeeded, or the tx is already toast.
       - linters:
           - errcheck
         text: '^Error return value of `.*\.(Close|Rollback)` is not checked$'

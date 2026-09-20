@@ -18,15 +18,11 @@ jobs:
       - name: go vet
         run: go vet ./...
 
-      # mattn/go-sqlite3 is cgo, so -race needs CGO_ENABLED=1 (the default
-      # on the ubuntu-latest runner, which ships gcc).
+      # mattn/go-sqlite3 is cgo, so -race needs CGO_ENABLED=1 (the runner's default).
       - name: go test -race
         run: go test -race ./...
 
-      # v6 of this action only supports golangci-lint v1; .golangci.yml here
-      # is v2-schema (matching the v2.12 CLI used to write/verify it), so
-      # this needs v7+. Pinned to the current major (v9) per the action's
-      # own README.
+      # v9: v6 of this action doesn't support golangci-lint v2.
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:

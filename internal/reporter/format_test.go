@@ -97,9 +97,8 @@ func TestFormatDiff_EscapesHTMLInNames(t *testing.T) {
 	}
 }
 
-// TestFormatDiff_DoesNotEscapeItsOwnHTMLTags verifies the literal <b> tags
-// FormatDiff itself writes (for the shop name / section headers) survive
-// unescaped — only untrusted content (set names) goes through esc().
+// FormatDiff's own <b> tags must survive unescaped — only untrusted
+// content (set names) goes through esc().
 func TestFormatDiff_DoesNotEscapeItsOwnHTMLTags(t *testing.T) {
 	msg := FormatDiff("Shop", []store.ReportItem{{Name: "Kit", PriceCents: 1000}}, nil, nil)
 	if !strings.Contains(msg, "<b>Shop</b>") {

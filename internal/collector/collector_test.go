@@ -171,10 +171,8 @@ func TestRun_FetchErrorDoesNotTouchSets(t *testing.T) {
 	}
 }
 
-// TestRun_SanityGuardPreventsMassRemoval verifies the guard (minSetsRatio):
-// a run that returns far fewer sets than the previous successful run is
-// treated as a failure, and must not touch sets/mark anything removed
-// (i.e. DeactivateMissing is never called).
+// A run returning far fewer sets than the previous one must fail instead
+// of being treated as a mass removal — and must not touch sets at all.
 func TestRun_SanityGuardPreventsMassRemoval(t *testing.T) {
 	db := newFakeStore()
 	shop := store.Shop{ID: 1, Slug: "fake"}
@@ -195,10 +193,10 @@ func TestRun_SanityGuardPreventsMassRemoval(t *testing.T) {
 		t.Fatal("expected sanity guard error, got nil")
 	}
 
-	// Crucially: no additional DeactivateMissing call happened, so no set
-	// from the baseline run was wrongly marked removed.
+	// No second deactivate call means the guard short-circuited before
+	// touching any sets from the baseline run.
 	if len(db.deactivateCalls) != 1 {
-		t.Errorf("DeactivateMissing called %d times total, want still 1 (guard must short-circuit before step 3-4)", len(db.deactivateCalls))
+		t.Errorf("DeactivateMissing called %d times total, want still 1", len(db.deactivateCalls))
 	}
 	r := db.runs[2]
 	if r.status != "failed" {
@@ -206,9 +204,7 @@ func TestRun_SanityGuardPreventsMassRemoval(t *testing.T) {
 	}
 }
 
-// TestRun_ForceBypassesSanityGuard verifies Options{Force: true} lets a run
-// through that the guard would otherwise refuse — the escape hatch for a
-// shop that has genuinely shrunk its catalog.
+// Options{Force: true} lets through a run the guard would otherwise refuse.
 func TestRun_ForceBypassesSanityGuard(t *testing.T) {
 	db := newFakeStore()
 	shop := store.Shop{ID: 1, Slug: "fake"}

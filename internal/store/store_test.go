@@ -160,10 +160,8 @@ func TestApplyRun_RollsBackOnError(t *testing.T) {
 	}
 }
 
-// TestUpsertSet_PersistsAndUpdatesEANAndSKU verifies EAN/SKU are stored on
-// insert and overwritten on a later upsert for the same (shop_id,
-// external_id), including being clearable back to NULL when a shop stops
-// reporting one (rather than an empty string sticking around forever).
+// EAN/SKU are stored on insert, overwritten on a later upsert, and
+// cleared back to NULL (not left as "") when a shop stops reporting one.
 func TestUpsertSet_PersistsAndUpdatesEANAndSKU(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
@@ -206,11 +204,8 @@ func TestUpsertSet_PersistsAndUpdatesEANAndSKU(t *testing.T) {
 	}
 }
 
-// TestInsertPriceHistory_RejectsDuplicateSetRunPair verifies the unique
-// index added in migration 3: PriceChanges joins price_history to itself
-// on (set_id, run_id) and assumes exactly one row per pair, so a second
-// insert for the same pair must fail rather than silently create an
-// ambiguous join.
+// The migration-3 unique index: a second price_history row for the same
+// (set_id, run_id) must fail, since PriceChanges assumes exactly one.
 func TestInsertPriceHistory_RejectsDuplicateSetRunPair(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
@@ -236,14 +231,11 @@ func TestInsertPriceHistory_RejectsDuplicateSetRunPair(t *testing.T) {
 	}
 }
 
-// TestReportQueries exercises NewSets, RemovedSets, and PriceChanges
-// together against real SQLite (reporter's own tests only cover these
-// through a fake store) across three runs, covering every case the diff
-// report needs to get right: a set that's new, one that's removed, one
-// whose price changed, one that's unchanged (must not appear anywhere),
-// and one that's removed then reactivated a run later — which must show
-// up as "new" again on reactivation, not "still removed" or silently
-// merged with its first appearance.
+// Exercises NewSets, RemovedSets, and PriceChanges against real SQLite
+// (reporter's tests only cover these through a fake store) across three
+// runs: a new set, a removed one, a price change, an unchanged one (must
+// appear nowhere), and one removed then reactivated a run later — which
+// must show up as "new" again, not "still removed".
 func TestReportQueries(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
@@ -275,9 +267,8 @@ func TestReportQueries(t *testing.T) {
 		set("ext-reactivated", 3000),
 	})
 
-	// run2: ext-removed and ext-reactivated both drop out; ext-changed's
-	// price moves; ext-unchanged stays the same; ext-new shows up for the
-	// first time.
+	// run2: ext-removed and ext-reactivated drop out; ext-changed's price
+	// moves; ext-unchanged stays the same; ext-new shows up for the first time.
 	run2 := applyRun("2026-01-02T00:00:00Z", "2026-01-02T00:01:00Z", []scraper.ScrapedSet{
 		set("ext-changed", 1500),
 		set("ext-unchanged", 2000),
@@ -312,9 +303,7 @@ func TestReportQueries(t *testing.T) {
 		t.Errorf("PriceChanges(run2, run1) = %+v, want exactly [Kit ext-changed: 1000 -> 1500]", changes)
 	}
 
-	// run3: ext-reactivated reappears. It must show up as new relative to
-	// run2 (where it had no price_history row) — reactivation is not
-	// treated as "still removed" or silently folded into anything else.
+	// run3: ext-reactivated reappears — must show up as new relative to run2.
 	run3 := applyRun("2026-01-03T00:00:00Z", "2026-01-03T00:01:00Z", []scraper.ScrapedSet{
 		set("ext-changed", 1500),
 		set("ext-unchanged", 2000),
@@ -347,11 +336,9 @@ func TestReportQueries(t *testing.T) {
 	}
 }
 
-// TestOpen_WALAllowsConcurrentReadDuringWrite opens the same database file
-// from two separate Store instances (simulating two overlapping processes,
-// e.g. an overrunning cron job) and verifies a read on one succeeds while
-// the other holds an open write transaction — this is what _journal_mode=WAL
-// buys over the default rollback journal, where the reader would block.
+// Two Store instances on the same file (simulating overlapping processes,
+// e.g. an overrunning cron job): a read on one must succeed while the
+// other holds an open write transaction — what WAL mode buys us.
 func TestOpen_WALAllowsConcurrentReadDuringWrite(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.db")
@@ -398,10 +385,8 @@ func TestOpen_WALAllowsConcurrentReadDuringWrite(t *testing.T) {
 	}
 }
 
-// TestLatestRun_NoRunsYet verifies LatestRun reports ok=false for a shop
-// that has never had a collect run — the case reporter.Run treats as a
-// hard error ("run collect first"), distinct from "everything has already
-// been reported" (see TestLatestUnreportedRun_AllReported).
+// A shop that's never had a collect run gets ok=false — distinct from
+// "everything's already been reported" (see AllReported below).
 func TestLatestRun_NoRunsYet(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
@@ -419,9 +404,7 @@ func TestLatestRun_NoRunsYet(t *testing.T) {
 	}
 }
 
-// TestLatestRun_ReturnsMostRecentRegardlessOfStatus verifies LatestRun
-// picks up a failed run even when an earlier successful run exists —
-// reporter.Run relies on this to detect a broken collect job.
+// LatestRun must pick up a failed run even with an earlier success on record.
 func TestLatestRun_ReturnsMostRecentRegardlessOfStatus(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
@@ -454,10 +437,8 @@ func TestLatestRun_ReturnsMostRecentRegardlessOfStatus(t *testing.T) {
 	}
 }
 
-// TestLatestUnreportedRun_AllReported verifies that once MarkReported has
-// stamped every successful run, LatestUnreportedRun reports current=nil —
-// this is what makes report idempotent (running it twice in a row sends
-// nothing the second time).
+// Once MarkReported has stamped every successful run, LatestUnreportedRun
+// must report current=nil — this is what makes report idempotent.
 func TestLatestUnreportedRun_AllReported(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
@@ -493,11 +474,9 @@ func TestLatestUnreportedRun_AllReported(t *testing.T) {
 	}
 }
 
-// TestLatestUnreportedRun_SkipsIntermediateRuns verifies that when
-// `collect` has run multiple times since the last `report`, the next
-// report diffs against the last *reported* run (skipping the runs in
-// between) rather than replaying each one individually, and MarkReported
-// then marks all of them reported at once so they don't pile up.
+// If collect has run several times since the last report, the next report
+// diffs against the last *reported* run — skipping the ones in between —
+// and MarkReported then clears all of them at once.
 func TestLatestUnreportedRun_SkipsIntermediateRuns(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()

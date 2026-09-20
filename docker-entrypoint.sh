@@ -1,18 +1,13 @@
 #!/bin/sh
 set -e
 
-# busybox crond runs each job in a minimal environment, not the one crond
-# itself was started with — so docker-compose's `environment:` vars
-# (GUNPLA_DB_PATH, GUNPLA_TELEGRAM_BOT_TOKEN, ...) would otherwise be
-# invisible to `collect`/`report`. Persist them to a file the crontab
-# entries source before running the binary.
+# busybox crond runs jobs in a minimal environment, not crond's own, so
+# docker-compose's env vars would otherwise be invisible to collect/report.
+# Persist them to a file the crontab entries source before running.
 #
-# Each value is single-quoted with embedded single quotes escaped as
-# '\'' (the standard POSIX shell technique), so a bot token or chat ID
-# containing a "$", backtick, double quote, or space round-trips through
-# the sourced file correctly instead of breaking its syntax or being
-# re-expanded by the shell that sources it (the previous double-quoted
-# `export KEY="VALUE"` form had exactly that problem).
+# Values are single-quoted with embedded quotes escaped as '\'' (standard
+# POSIX technique), so a token containing $, `, ", or a space round-trips
+# correctly instead of breaking the sourced file's syntax.
 : > /etc/gunpla.env
 printenv | grep -E '^GUNPLA_' | while IFS= read -r line; do
 	key=${line%%=*}

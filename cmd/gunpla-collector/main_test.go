@@ -45,9 +45,8 @@ func TestParseFlags_ShopEqualsForm(t *testing.T) {
 	}
 }
 
-// TestParseFlags_ShopSpaceForm guards against the old hand-rolled parser's
-// bug: "--shop x" (space-separated) was silently ignored, since it only
-// recognized "--shop=x".
+// TestParseFlags_ShopSpaceForm: the old parser only understood "--shop=x",
+// silently dropping the space-separated form.
 func TestParseFlags_ShopSpaceForm(t *testing.T) {
 	flags, err := parseFlags("collect", []string{"--shop", "geeksheaven"})
 	if err != nil {
@@ -102,10 +101,8 @@ func TestParseFlags_UnknownFlagIsAnError(t *testing.T) {
 	}
 }
 
-// TestRun_UnknownSubcommandIsUsageError verifies run() rejects an unknown
-// subcommand before touching the DB or network (both would fail in this
-// test environment, which is exactly the point — this must return before
-// reaching either).
+// An unknown subcommand must be rejected before touching the DB or
+// network — both would fail in this test environment anyway.
 func TestRun_UnknownSubcommandIsUsageError(t *testing.T) {
 	if err := run([]string{"bogus"}); err == nil {
 		t.Fatal("expected a usage error for an unknown subcommand, got nil")
@@ -118,21 +115,18 @@ func TestRun_NoArgsIsUsageError(t *testing.T) {
 	}
 }
 
-// TestRun_HelpReturnsNilWithoutTouchingStore verifies "-h" is handled (and
-// usage printed) during flag parsing, before store.Open — same reasoning
-// as TestRun_UnknownSubcommandIsUsageError.
+// "-h" is handled during flag parsing, before store.Open is ever called.
 func TestRun_HelpReturnsNilWithoutTouchingStore(t *testing.T) {
 	if err := run([]string{"collect", "-h"}); err != nil {
 		t.Fatalf("run with -h: %v, want nil", err)
 	}
 }
 
-// TestResolveShops_FiltersToRegisteredScrapers covers B7: a shop active in
-// the DB but whose scraper was removed from the binary must not show up in
-// the "no explicit selection" path, and the result must be sorted.
+// A shop active in the DB but whose scraper was removed from the binary
+// must not show up, and the result must be sorted.
 func TestResolveShops_FiltersToRegisteredScrapers(t *testing.T) {
-	// Unique slugs so this doesn't collide with the real scrapers
-	// registered by this package's init(), or other tests' registrations.
+	// Unique slugs so this doesn't collide with the real scrapers this
+	// package's init() registers.
 	const slugB = "zzz-resolve-test-b"
 	const slugA = "zzz-resolve-test-a"
 	const slugOrphan = "zzz-resolve-test-orphan"

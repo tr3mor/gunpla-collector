@@ -81,7 +81,7 @@ type shopifyVariant struct {
 	Available bool   `json:"available"`
 	Price     string `json:"price"`   // decimal string, e.g. "92.00"
 	SKU       string `json:"sku"`     // merchant-assigned, may be blank
-	Barcode   string `json:"barcode"` // typically EAN/UPC when set at all
+	Barcode   string `json:"barcode"` // usually EAN/UPC, if set
 }
 
 func (g *GundamStore) FetchAll(ctx context.Context) ([]ScrapedSet, error) {

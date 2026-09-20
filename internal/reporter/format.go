@@ -27,10 +27,8 @@ func currencySymbol(currency string) string {
 	}
 }
 
-// esc escapes text we don't control (scraped set names, and the shop name
-// once that can come from the DB) for Telegram's HTML parse mode, so a
-// stray "<", ">" or "&" can't break entity parsing and cause Telegram to
-// reject the whole message.
+// esc escapes text we don't control (set names, shop name) for Telegram's
+// HTML parse mode, so a stray "<", ">" or "&" can't break the message.
 func esc(s string) string {
 	return html.EscapeString(s)
 }
@@ -42,10 +40,8 @@ func FormatBaseline(shopName string, setsFound int) string {
 		esc(shopName), setsFound)
 }
 
-// FormatFailure formats the "latest collect run failed (or appears stuck)"
-// alert. Sent on every report run until a collect succeeds again — a
-// scrape failure needs to keep being noticed, not fade into a one-time
-// log line nobody reads.
+// FormatFailure formats the "collect failed (or appears stuck)" alert,
+// sent on every report run until a collect succeeds again.
 func FormatFailure(shopName, reason string) string {
 	return fmt.Sprintf("⚠️ <b>%s</b> — collect failed\n%s", esc(shopName), esc(truncate(reason, 500)))
 }

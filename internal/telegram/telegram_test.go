@@ -72,11 +72,8 @@ func TestSplitMessage_HardSplitsOversizedLine(t *testing.T) {
 	}
 }
 
-// TestSplitMessage_NeverSplitsMidRune builds a single line of multi-byte
-// runes (as would appear in a price line: "€", "→", "•") long enough to
-// need a hard split, and verifies every resulting chunk is valid UTF-8 —
-// the byte-slicing bug this replaces (`p[:limit]`) could cut a rune in
-// half.
+// A long line of multi-byte runes ("€", "→", "•") must hard-split into
+// valid UTF-8 chunks — the old `p[:limit]` byte slicing could cut one in half.
 func TestSplitMessage_NeverSplitsMidRune(t *testing.T) {
 	huge := strings.Repeat("€→•", MaxMessageLen) // well over the limit, 3-byte runes throughout
 	chunks := splitMessage(huge, MaxMessageLen)
@@ -93,11 +90,8 @@ func TestSplitMessage_NeverSplitsMidRune(t *testing.T) {
 	}
 }
 
-// TestSplitMessage_NeverSplitsInsideHTMLTag simulates a large FormatDiff
-// output — many "• Name — price\n" lines under a "<b>New</b>" header —
-// and verifies no chunk contains an unbalanced "<b>"/"</b>" pair. Each
-// line is a complete unit, so splitting on "\n" (not raw bytes) must never
-// land inside a tag.
+// A large FormatDiff-shaped output must never split with an unbalanced
+// <b>/</b> pair in a chunk.
 func TestSplitMessage_NeverSplitsInsideHTMLTag(t *testing.T) {
 	var b strings.Builder
 	b.WriteString("<b>New</b>\n")
@@ -117,8 +111,7 @@ func TestSplitMessage_NeverSplitsInsideHTMLTag(t *testing.T) {
 	}
 }
 
-// TestSendMessage_RetriesOnce429ThenSucceeds verifies a 429 response with
-// a retry_after hint is waited out and the send retried exactly once.
+// A 429 with a retry_after hint gets waited out and retried once.
 func TestSendMessage_RetriesOnce429ThenSucceeds(t *testing.T) {
 	var calls int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -147,8 +140,7 @@ func TestSendMessage_RetriesOnce429ThenSucceeds(t *testing.T) {
 	}
 }
 
-// TestSendMessage_DoesNotRetryTwice verifies a second consecutive 429 is
-// returned as an error rather than retried again — "retry once" means once.
+// A second consecutive 429 is an error, not another retry.
 func TestSendMessage_DoesNotRetryTwice(t *testing.T) {
 	var calls int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -169,8 +161,7 @@ func TestSendMessage_DoesNotRetryTwice(t *testing.T) {
 	}
 }
 
-// TestSendMessage_UsesHTMLParseMode guards against regressing back to
-// Telegram's deprecated legacy Markdown mode.
+// Guards against regressing back to Telegram's deprecated Markdown mode.
 func TestSendMessage_UsesHTMLParseMode(t *testing.T) {
 	var gotParseMode string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

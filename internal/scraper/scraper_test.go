@@ -14,13 +14,10 @@ func (s *registryTestScraper) FetchAll(ctx context.Context) ([]ScrapedSet, error
 	return nil, nil
 }
 
-// TestAll_SortedBySlug verifies All() returns a deterministic order —
-// registry is a map, so without sorting this would vary run to run, which
-// would make collect's request sequencing (and report's shop iteration
-// order) nondeterministic too.
+// registry is a map, so All() needs its own sort to stay deterministic.
 func TestAll_SortedBySlug(t *testing.T) {
-	// Unique slugs so this doesn't collide with scrapers other tests (or
-	// main's init) may have registered in this same test binary.
+	// Unique slugs so this doesn't collide with scrapers other tests may
+	// have registered in this same binary.
 	Register(&registryTestScraper{slug: "zzz-registry-test-c"})
 	Register(&registryTestScraper{slug: "zzz-registry-test-a"})
 	Register(&registryTestScraper{slug: "zzz-registry-test-b"})

@@ -63,20 +63,14 @@ type PriceChange struct {
 }
 
 func Open(path string) (*Store, error) {
-	// DSN pragmas (not one-off PRAGMA execs) because PRAGMA state is
-	// per-connection: database/sql can transparently open a new underlying
-	// connection later, and a one-off PRAGMA on the first connection
-	// wouldn't carry over to it. The driver applies DSN pragmas to every
-	// connection it opens.
+	// Pragmas go on the DSN, not as one-off PRAGMA execs, because
+	// database/sql can open new connections later and a one-off PRAGMA
+	// wouldn't carry over to them.
 	//
-	//   _foreign_keys=on    enforce FK constraints (see TestOpen_ForeignKeysEnforced)
-	//   _busy_timeout=5000  if another process (or a hung previous run) holds
-	//                       the write lock, wait up to 5s instead of failing
-	//                       SQLITE_BUSY immediately — collect/report are
-	//                       cron-driven, so a second invocation overlapping a
-	//                       slow first one is a "wait a moment", not an error
-	//   _journal_mode=WAL   readers (report) don't block on a writer
-	//                       (collect) mid-transaction, and vice versa
+	//   _foreign_keys=on    enforce FK constraints
+	//   _busy_timeout=5000  an overlapping process (e.g. a slow cron run)
+	//                       waits 5s instead of failing SQLITE_BUSY outright
+	//   _journal_mode=WAL   readers and writers don't block each other
 	db, err := sql.Open("sqlite3", path+"?_foreign_keys=on&_busy_timeout=5000&_journal_mode=WAL")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
@@ -194,9 +188,8 @@ func (s *Store) LastSuccessfulRunSetsFound(ctx context.Context, shopID int64) (i
 }
 
 // UpsertSet inserts a new set or updates an existing one (matched on
-// shop_id+external_id), reactivating it if it had previously been marked
-// removed. Returns the set's id. ean and sku may be empty (not every shop
-// exposes both); empty values are stored as NULL rather than "".
+// shop_id+external_id), reactivating it if it was previously removed.
+// ean and sku may be empty; empty values are stored as NULL, not "".
 func (s *Store) UpsertSet(ctx context.Context, shopID int64, externalID, url, name, grade, ean, sku, now string) (int64, error) {
 	row := s.conn.QueryRowContext(ctx,
 		`INSERT INTO sets (shop_id, external_id, url, name, grade, ean, sku, first_seen_at, last_seen_at, is_active, removed_at)
@@ -273,11 +266,8 @@ func (s *Store) ApplyRun(ctx context.Context, shopID, runID int64, sets []scrape
 }
 
 // DeactivateMissing marks is_active=0/removed_at=now for every active set
-// of this shop that didn't get a price_history row in runID. Every set
-// ApplyRun's loop upserted this run also got a price_history row in the
-// same transaction (InsertPriceHistory runs right after each UpsertSet),
-// so "no price_history row for runID" and "not seen this run" are the same
-// thing — this must run after that loop, not before.
+// of this shop with no price_history row in runID. Must run after
+// ApplyRun's upsert loop, since that's what populates those rows.
 func (s *Store) DeactivateMissing(ctx context.Context, shopID, runID int64, now string) error {
 	_, err := s.conn.ExecContext(ctx,
 		`UPDATE sets SET is_active = 0, removed_at = ?
@@ -304,8 +294,7 @@ func scanRun(row interface{ Scan(...any) error }) (*Run, error) {
 }
 
 // latestRunWhere returns the most recent run for shopID matching an
-// additional (trusted, not user-input) SQL condition, or nil if none
-// matches.
+// additional SQL condition (trusted, never user input), or nil.
 func (s *Store) latestRunWhere(ctx context.Context, shopID int64, cond string) (*Run, error) {
 	row := s.conn.QueryRowContext(ctx,
 		`SELECT `+runColumns+` FROM scrape_runs WHERE shop_id = ? AND `+cond+` ORDER BY id DESC LIMIT 1`,
@@ -317,9 +306,8 @@ func (s *Store) latestRunWhere(ctx context.Context, shopID int64, cond string) (
 	return r, nil
 }
 
-// LatestRun returns the most recent run for shopID regardless of status,
-// used to detect a failed or stuck collect run (see reporter.Run). ok is
-// false if the shop has no runs at all yet.
+// LatestRun returns the most recent run for shopID regardless of status.
+// ok is false if the shop has no runs yet.
 func (s *Store) LatestRun(ctx context.Context, shopID int64) (run *Run, ok bool, err error) {
 	r, err := s.latestRunWhere(ctx, shopID, `1 = 1`)
 	if err != nil {
@@ -328,11 +316,9 @@ func (s *Store) LatestRun(ctx context.Context, shopID int64) (run *Run, ok bool,
 	return r, r != nil, nil
 }
 
-// LatestUnreportedRun returns the most recent successful run for shopID
-// that hasn't been reported yet (current, nil if everything successful has
-// already been reported — i.e. nothing new to report), and the most
-// recent run that has been reported (previous, nil on the very first
-// report — use FormatBaseline instead of a diff).
+// LatestUnreportedRun returns the newest successful run not yet reported
+// (current, nil if there's nothing new) and the newest one that has been
+// (previous, nil on the first-ever report).
 func (s *Store) LatestUnreportedRun(ctx context.Context, shopID int64) (current *Run, previous *Run, err error) {
 	current, err = s.latestRunWhere(ctx, shopID, `status = 'success' AND reported_at IS NULL`)
 	if err != nil {
@@ -345,11 +331,9 @@ func (s *Store) LatestUnreportedRun(ctx context.Context, shopID int64) (current 
 	return current, previous, nil
 }
 
-// MarkReported stamps reported_at = now on every successful run for shopID
-// that hasn't been reported yet. Called once a report has been sent
-// successfully. This marks not just the run that was diffed but any older
-// unreported successful runs too, so the next report's diff always starts
-// from the last *reported* run instead of replaying every run one by one.
+// MarkReported stamps reported_at = now on every unreported successful run
+// for shopID, called once a report has sent. Marks any older unreported
+// runs too, not just the one diffed, so they don't pile up.
 func (s *Store) MarkReported(ctx context.Context, shopID int64, now string) error {
 	_, err := s.conn.ExecContext(ctx,
 		`UPDATE scrape_runs SET reported_at = ? WHERE shop_id = ? AND status = 'success' AND reported_at IS NULL`,

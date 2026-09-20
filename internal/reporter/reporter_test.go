@@ -114,11 +114,8 @@ func TestRun_NoRunsYetIsAnError(t *testing.T) {
 	}
 }
 
-// TestRun_NothingNewToReportSendsNothing covers the idempotency case (A1):
-// the latest run has already been reported, so there's nothing to diff and
-// no message should be sent — this is what makes running `report` twice in
-// a row (or after `collect` didn't produce anything new) silent instead of
-// re-sending a stale diff.
+// Everything already reported means nothing to diff and no message sent —
+// this is what makes running `report` twice in a row silent.
 func TestRun_NothingNewToReportSendsNothing(t *testing.T) {
 	db := &fakeStore{
 		latest: successRun(1), // status success, not failed/stuck
@@ -139,10 +136,8 @@ func TestRun_NothingNewToReportSendsNothing(t *testing.T) {
 	}
 }
 
-// TestRun_AlertsOnFailedCollect covers A2: the most recent run overall is
-// failed, and there's nothing unreported to diff. The alert must still be
-// sent so a broken scraper doesn't go unnoticed just because there's no
-// new successful run to report.
+// The alert must go out even with nothing unreported to diff — a broken
+// scraper shouldn't go unnoticed just because there's no diff to send.
 func TestRun_AlertsOnFailedCollect(t *testing.T) {
 	db := &fakeStore{
 		latest: &store.Run{ID: 3, Status: "failed", Error: sql.NullString{String: "site structure changed", Valid: true}},
@@ -162,10 +157,8 @@ func TestRun_AlertsOnFailedCollect(t *testing.T) {
 	}
 }
 
-// TestRun_AlertsOnFailedCollectThenReportsUnrelatedDiff covers the case
-// where the latest run failed but there's still an older unreported
-// successful run to diff (e.g. collect succeeded, then a later collect run
-// failed before report ran) — both messages should go out.
+// If the latest run failed but an older unreported successful run still
+// needs diffing, both messages go out.
 func TestRun_AlertsOnFailedCollectThenReportsUnrelatedDiff(t *testing.T) {
 	db := &fakeStore{
 		latest:   &store.Run{ID: 3, Status: "failed", Error: sql.NullString{String: "boom", Valid: true}},
@@ -189,9 +182,8 @@ func TestRun_AlertsOnFailedCollectThenReportsUnrelatedDiff(t *testing.T) {
 	}
 }
 
-// TestRun_StuckRunningIsTreatedAsFailed covers the crashed-process case: a
-// run stuck in status "running" long past stuckRunThreshold is alerted on
-// even though it never reached FinishRunFailed.
+// A run stuck "running" long past stuckRunThreshold gets alerted on even
+// though it never reached FinishRunFailed — the crashed-process case.
 func TestRun_StuckRunningIsTreatedAsFailed(t *testing.T) {
 	db := &fakeStore{
 		latest: &store.Run{ID: 3, Status: "running", StartedAt: "2020-01-01T00:00:00Z"}, // ancient
@@ -207,8 +199,7 @@ func TestRun_StuckRunningIsTreatedAsFailed(t *testing.T) {
 	}
 }
 
-// TestRun_RecentlyRunningIsNotStuck verifies a run that's genuinely still
-// in progress (started recently) does not trigger a false alert.
+// A run that just started shouldn't trigger a false stuck alert.
 func TestRun_RecentlyRunningIsNotStuck(t *testing.T) {
 	db := &fakeStore{
 		// A fixed timestamp would eventually cross stuckRunThreshold as

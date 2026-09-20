@@ -1,5 +1,5 @@
-// Package reporter diffs unreported scrape runs for a shop against the
-// last-reported one and sends a Telegram summary, plus an alert if the
+// Package reporter diffs a shop's unreported scrape runs against the
+// last-reported one and sends a Telegram summary, alerting instead if the
 // most recent collect run failed or appears stuck.
 package reporter
 
@@ -19,18 +19,15 @@ import (
 const stuckRunThreshold = 2 * time.Hour
 
 type Store interface {
-	// LatestRun returns the most recent run for shopID regardless of
-	// status, so a failed or stuck collect run can be detected and
-	// alerted on even when there's nothing new to report.
+	// LatestRun returns the most recent run regardless of status, so a
+	// failed or stuck collect can be caught even with nothing new to report.
 	LatestRun(ctx context.Context, shopID int64) (run *store.Run, ok bool, err error)
-	// LatestUnreportedRun returns the most recent successful run that
-	// hasn't been reported yet (current, nil if there's nothing new) and
-	// the most recent one that has (previous, nil on the first-ever
-	// report).
+	// LatestUnreportedRun returns the newest successful run not yet
+	// reported (current, nil if there's nothing new) and the newest one
+	// that has been (previous, nil on the first-ever report).
 	LatestUnreportedRun(ctx context.Context, shopID int64) (current *store.Run, previous *store.Run, err error)
-	// MarkReported stamps every unreported successful run as reported,
-	// making a successful report idempotent: running it again immediately
-	// finds nothing new.
+	// MarkReported stamps every unreported successful run as reported, so
+	// running report again right away finds nothing new.
 	MarkReported(ctx context.Context, shopID int64, now string) error
 	NewSets(ctx context.Context, shopID, currentRunID, previousRunID int64) ([]store.ReportItem, error)
 	RemovedSets(ctx context.Context, shopID, currentRunID, previousRunID int64) ([]store.ReportItem, error)
@@ -94,8 +91,7 @@ func Run(ctx context.Context, db Store, shop store.Shop, sender telegram.Sender,
 	if err := telegram.SendLong(ctx, sender, msg); err != nil {
 		return fmt.Errorf("send report: %w", err)
 	}
-	// Only stamp reported_at once the send actually succeeded, so a failed
-	// send leaves the run unreported and gets picked up again next time.
+	// Only stamp once the send succeeds, so a failed send is retried next time.
 	now := time.Now().UTC().Format(time.RFC3339)
 	if err := db.MarkReported(ctx, shop.ID, now); err != nil {
 		return fmt.Errorf("mark reported: %w", err)
@@ -103,10 +99,9 @@ func Run(ctx context.Context, db Store, shop store.Shop, sender telegram.Sender,
 	return nil
 }
 
-// failureReason reports whether the shop's latest run counts as failed:
-// status "failed" outright, or "running" for longer than
-// stuckRunThreshold (a crashed process that never reached
-// FinishRunFailed). Returns the text to put in the alert.
+// failureReason reports whether run counts as failed — status "failed"
+// outright, or "running" past stuckRunThreshold (a crash that never
+// reached FinishRunFailed) — and the text to put in the alert.
 func failureReason(run *store.Run) (reason string, failed bool) {
 	switch run.Status {
 	case "failed":

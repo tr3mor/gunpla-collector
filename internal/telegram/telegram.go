@@ -27,10 +27,8 @@ type Client struct {
 
 func NewClient(token, chatID string) *Client {
 	return &Client{
-		// http.DefaultClient has no timeout, so a stalled connection would
-		// hang the process indefinitely (the whole-run context timeout in
-		// main.go is a backstop, but a request-level timeout catches it
-		// much sooner and gives a clearer error).
+		// http.DefaultClient has no timeout — a stalled connection would
+		// otherwise hang the process indefinitely.
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 		token:      token,
 		chatID:     chatID,
@@ -46,10 +44,8 @@ type sendMessageResponse struct {
 	} `json:"parameters"`
 }
 
-// SendMessage sends one message. If Telegram responds 429 Too Many
-// Requests with a retry_after hint, it waits that long (context-aware —
-// SIGTERM or the whole-run timeout interrupts the wait) and retries
-// exactly once before giving up.
+// SendMessage sends one message. On a 429 with a retry_after hint, it
+// waits that long and retries exactly once before giving up.
 func (c *Client) SendMessage(ctx context.Context, text string) error {
 	retryAfter, err := c.sendOnce(ctx, text)
 	if err == nil || retryAfter <= 0 {
@@ -62,9 +58,8 @@ func (c *Client) SendMessage(ctx context.Context, text string) error {
 	return err
 }
 
-// sendOnce performs a single sendMessage call. On a 429 response with a
-// retry_after hint, it returns that (in seconds) alongside the error so
-// SendMessage can decide whether to wait and retry.
+// sendOnce performs a single sendMessage call, returning the retry_after
+// hint (seconds) on a 429 so SendMessage can decide whether to retry.
 func (c *Client) sendOnce(ctx context.Context, text string) (retryAfterSeconds int, err error) {
 	endpoint := fmt.Sprintf("%s/bot%s/sendMessage", c.apiBase, c.token)
 
@@ -103,10 +98,9 @@ func (c *Client) sendOnce(ctx context.Context, text string) (retryAfterSeconds i
 	return 0, nil
 }
 
-// sleepCtx waits out d, returning ctx's error early if ctx is cancelled
-// first. Mirrors internal/scraper's sleepCtx — duplicated rather than
-// shared across packages for one small function with no other coupling
-// between them.
+// sleepCtx waits out d, returning early with ctx's error if cancelled
+// first. Duplicated from internal/scraper — not worth sharing for one
+// small function.
 func sleepCtx(ctx context.Context, d time.Duration) error {
 	if d <= 0 {
 		return ctx.Err()
@@ -139,14 +133,10 @@ func SendLong(ctx context.Context, c Sender, text string) error {
 }
 
 // splitMessage splits text into chunks of at most limit bytes, breaking
-// only at line boundaries. Every line format.go writes is a complete unit
-// — a section header or one "• Name — price" item — so splitting on "\n"
-// instead of on bytes means a chunk boundary never lands inside an HTML
-// entity like "<b>...</b>" (which would leave a tag unclosed and make
-// Telegram reject the whole chunk) or inside a multi-byte UTF-8 rune (a
-// "€", "→", "•", or emoji, which would produce invalid UTF-8). A single
-// line longer than limit on its own is hard-split on rune boundaries as a
-// last resort.
+// only at line boundaries — every line format.go writes is a complete
+// unit (a header or one "• Name — price" item), so a boundary never lands
+// inside an HTML tag or a multi-byte rune. A single oversized line falls
+// back to a rune-safe hard split.
 func splitMessage(text string, limit int) []string {
 	if len(text) <= limit {
 		return []string{text}
@@ -188,10 +178,9 @@ func splitRunes(s string, limit int) []string {
 			cut--
 		}
 		if cut == 0 {
-			// No valid rune boundary within the first `limit` bytes — a
-			// single rune wider than limit, which can't happen for valid
-			// UTF-8 at any sane limit. Fail safe by cutting at limit
-			// anyway rather than looping forever.
+			// No rune boundary within `limit` bytes — can't happen for
+			// valid UTF-8 at any sane limit, but cut anyway rather than
+			// loop forever.
 			cut = limit
 		}
 		chunks = append(chunks, s[:cut])

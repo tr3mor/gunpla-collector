@@ -21,11 +21,9 @@ const minSetsRatio = 0.5
 // Options controls one collect run's behavior beyond the shop/scraper it
 // runs against.
 type Options struct {
-	// Force skips the sanity guard (minSetsRatio) for this run. Use when a
-	// shop has genuinely shrunk its catalog (dropped a grade, restructured
-	// its category pages) and the guard is now blocking every run instead
-	// of protecting against a broken scraper — there's otherwise no way
-	// out of a guard that trips permanently.
+	// Force skips the sanity guard (minSetsRatio). Use when a shop has
+	// genuinely shrunk its catalog and the guard would otherwise block
+	// every run forever.
 	Force bool
 }
 

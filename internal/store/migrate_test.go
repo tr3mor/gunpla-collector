@@ -18,9 +18,7 @@ func userVersion(t *testing.T, db *sql.DB) int {
 	return v
 }
 
-// TestMigrate_FreshDBReachesLatestVersion opens a brand-new database and
-// asserts every migration file ran, leaving user_version at the count of
-// migration files.
+// A brand-new database should run every migration file.
 func TestMigrate_FreshDBReachesLatestVersion(t *testing.T) {
 	s := openTestStore(t)
 
@@ -33,9 +31,7 @@ func TestMigrate_FreshDBReachesLatestVersion(t *testing.T) {
 	}
 }
 
-// TestMigrate_ReopenIsNoop verifies re-opening an already-migrated database
-// doesn't error and leaves user_version unchanged (every migration is
-// skipped because its number is <= the stored version).
+// Re-opening an already-migrated database must leave user_version unchanged.
 func TestMigrate_ReopenIsNoop(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.db")
@@ -61,11 +57,9 @@ func TestMigrate_ReopenIsNoop(t *testing.T) {
 	}
 }
 
-// TestMigrate_AppliesOnTopOfPreMigrationDatabase simulates a database
-// created before migrations existed: tables already present (via the
-// baseline schema applied directly, bypassing migrate), user_version left
-// at its SQLite default of 0. migrate must run migration 1 as a no-op
-// (CREATE TABLE IF NOT EXISTS) and apply every later migration on top.
+// Simulates a database from before migrations existed: tables already
+// present, user_version still at SQLite's default of 0. migrate must run
+// migration 1 as a no-op and apply everything after it.
 func TestMigrate_AppliesOnTopOfPreMigrationDatabase(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.db")

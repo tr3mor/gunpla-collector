@@ -12,18 +12,13 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-// migrate applies every migration file in migrations/ whose number is
-// greater than the database's current `PRAGMA user_version`, in filename
-// order, each inside its own transaction. Files are numbered
-// 0001_*.sql, 0002_*.sql, ... — a file's numeric prefix becomes the new
-// user_version once that file's statements commit successfully, so a
-// database always records exactly which migrations it has applied and
-// re-opening it is a no-op.
+// migrate applies every migration file in migrations/ newer than the
+// database's `PRAGMA user_version`, in filename order (0001_*.sql,
+// 0002_*.sql, ...), each in its own transaction. A file's numeric prefix
+// becomes the new user_version once it commits, so re-opening an
+// up-to-date database is a no-op.
 //
-// Never edit a migration file that has already shipped — add a new one
-// instead. Migration 1 is the original CREATE TABLE IF NOT EXISTS schema,
-// so it's a safe no-op against a database that already has the tables but
-// user_version = 0 (every database created before migrations existed).
+// Never edit a migration that's already shipped — add a new one instead.
 func migrate(ctx context.Context, db *sql.DB) error {
 	names, err := migrationNames()
 	if err != nil {
