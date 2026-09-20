@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"gunpla-collector/internal/collector"
 	"gunpla-collector/internal/config"
@@ -17,6 +18,17 @@ import (
 	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
 	"gunpla-collector/internal/telegram"
+)
+
+// Default whole-run timeouts, used when GUNPLA_RUN_TIMEOUT isn't set. Each
+// bounds the entire `collect`/`report` invocation (every shop, every
+// request) — a backstop against a hung request or stalled Telegram send
+// leaving a process (and its SQLite connection) alive indefinitely.
+// collect's is generous because it makes many rate-limited HTTP requests
+// across shops; report's is short because it's a handful of Telegram sends.
+const (
+	defaultCollectTimeout = 30 * time.Minute
+	defaultReportTimeout  = 5 * time.Minute
 )
 
 func init() {
@@ -59,6 +71,9 @@ func run(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	ctx, cancel := context.WithTimeout(ctx, runTimeout(cmd, cfg.RunTimeout))
+	defer cancel()
 
 	switch cmd {
 	case "collect":
@@ -147,6 +162,21 @@ func resolveShops(ctx context.Context, db *store.Store, cfg config.Config, shopF
 		}
 	}
 	return db.ActiveShops(ctx)
+}
+
+// runTimeout picks the whole-run timeout for cmd: the GUNPLA_RUN_TIMEOUT
+// override if set, otherwise the command's own default. An unrecognized
+// cmd gets the (larger) collect default; it doesn't matter in practice
+// since run() rejects unknown commands via usageError before the context
+// deadline can be reached.
+func runTimeout(cmd string, override time.Duration) time.Duration {
+	if override > 0 {
+		return override
+	}
+	if cmd == "report" {
+		return defaultReportTimeout
+	}
+	return defaultCollectTimeout
 }
 
 func flagValue(arg, name string) (string, bool) {

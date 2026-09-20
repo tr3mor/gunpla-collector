@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"gunpla-collector/internal/scraper"
 )
@@ -155,6 +156,57 @@ func TestApplyRun_RollsBackOnError(t *testing.T) {
 	}
 	if count != 0 {
 		t.Errorf("expected rollback to leave 0 sets for shop, got %d", count)
+	}
+}
+
+// TestOpen_WALAllowsConcurrentReadDuringWrite opens the same database file
+// from two separate Store instances (simulating two overlapping processes,
+// e.g. an overrunning cron job) and verifies a read on one succeeds while
+// the other holds an open write transaction — this is what _journal_mode=WAL
+// buys over the default rollback journal, where the reader would block.
+func TestOpen_WALAllowsConcurrentReadDuringWrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.db")
+
+	s1, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open s1: %v", err)
+	}
+	defer s1.Close()
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open s2: %v", err)
+	}
+	defer s2.Close()
+
+	ctx := context.Background()
+	tx, err := s1.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("BeginTx: %v", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO shops (slug, name, base_url, active) VALUES ('mid-write', 'Mid Write', 'https://example.com', 1)`); err != nil {
+		t.Fatalf("insert within open tx: %v", err)
+	}
+	// tx deliberately left uncommitted here.
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := s2.ActiveShops(ctx)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("read from s2 while s1's write tx is open: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("read from s2 blocked for 2s while s1's write tx was open — WAL mode not in effect")
+	}
+
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit s1 tx: %v", err)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // MaxMessageLen is Telegram's message length limit; callers should split
@@ -25,7 +26,11 @@ type Client struct {
 
 func NewClient(token, chatID string) *Client {
 	return &Client{
-		httpClient: http.DefaultClient,
+		// http.DefaultClient has no timeout, so a stalled connection would
+		// hang the process indefinitely (the whole-run context timeout in
+		// main.go is a backstop, but a request-level timeout catches it
+		// much sooner and gives a clearer error).
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 		token:      token,
 		chatID:     chatID,
 		apiBase:    "https://api.telegram.org",

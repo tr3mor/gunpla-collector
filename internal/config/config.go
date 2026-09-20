@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -12,6 +13,12 @@ type Config struct {
 	TelegramToken  string
 	TelegramChatID string
 	Shops          []string // empty = all active shops
+	// RunTimeout overrides how long a single `collect` or `report`
+	// invocation is allowed to run before its context is cancelled. Zero
+	// means "use the command's own default" (see main.go) — a whole-run
+	// backstop against a hung HTTP request or a stalled Telegram send,
+	// distinct from (and larger than) any single request's own timeout.
+	RunTimeout time.Duration
 }
 
 func Load() Config {
@@ -20,7 +27,24 @@ func Load() Config {
 		TelegramToken:  os.Getenv("GUNPLA_TELEGRAM_BOT_TOKEN"),
 		TelegramChatID: os.Getenv("GUNPLA_TELEGRAM_CHAT_ID"),
 		Shops:          parseShops(os.Getenv("GUNPLA_SHOPS")),
+		RunTimeout:     parseRunTimeout(os.Getenv("GUNPLA_RUN_TIMEOUT")),
 	}
+}
+
+// parseRunTimeout parses a Go duration string (e.g. "45m", "1h"). An empty
+// or unparsable value returns 0, meaning "use the command's default" — this
+// package has no logger to report a malformed value through, so a typo
+// silently falls back rather than failing the whole run.
+func parseRunTimeout(raw string) time.Duration {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		return 0
+	}
+	return d
 }
 
 func parseShops(raw string) []string {

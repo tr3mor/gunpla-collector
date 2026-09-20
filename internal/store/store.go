@@ -64,12 +64,21 @@ type PriceChange struct {
 }
 
 func Open(path string) (*Store, error) {
-	// _foreign_keys=on is set via the DSN (not a one-off PRAGMA exec) because
-	// PRAGMA state is per-connection: database/sql can transparently open a
-	// new underlying connection later, and a one-off PRAGMA on the first
-	// connection wouldn't carry over to it. The driver applies DSN pragmas
-	// to every connection it opens.
-	db, err := sql.Open("sqlite3", path+"?_foreign_keys=on")
+	// DSN pragmas (not one-off PRAGMA execs) because PRAGMA state is
+	// per-connection: database/sql can transparently open a new underlying
+	// connection later, and a one-off PRAGMA on the first connection
+	// wouldn't carry over to it. The driver applies DSN pragmas to every
+	// connection it opens.
+	//
+	//   _foreign_keys=on    enforce FK constraints (see TestOpen_ForeignKeysEnforced)
+	//   _busy_timeout=5000  if another process (or a hung previous run) holds
+	//                       the write lock, wait up to 5s instead of failing
+	//                       SQLITE_BUSY immediately — collect/report are
+	//                       cron-driven, so a second invocation overlapping a
+	//                       slow first one is a "wait a moment", not an error
+	//   _journal_mode=WAL   readers (report) don't block on a writer
+	//                       (collect) mid-transaction, and vice versa
+	db, err := sql.Open("sqlite3", path+"?_foreign_keys=on&_busy_timeout=5000&_journal_mode=WAL")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}

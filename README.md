@@ -56,6 +56,7 @@ Environment variables:
 | `GUNPLA_TELEGRAM_BOT_TOKEN`    | —                   | required for `report`                                    |
 | `GUNPLA_TELEGRAM_CHAT_ID`      | —                   | required for `report`                                    |
 | `GUNPLA_SHOPS`                 | (all active shops) | comma-separated slugs, e.g. `geeksheaven,gundamstore`     |
+| `GUNPLA_RUN_TIMEOUT`           | `30m` (collect) / `5m` (report) | whole-run timeout, Go duration string e.g. `45m` |
 
 ## Running locally
 
