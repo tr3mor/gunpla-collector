@@ -2,8 +2,13 @@ package telegram
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+	"unicode/utf8"
 )
 
 type recordingSender struct {
@@ -25,12 +30,12 @@ func TestSendLong_ShortMessageSingleSend(t *testing.T) {
 	}
 }
 
-func TestSendLong_SplitsOnParagraphBoundaries(t *testing.T) {
-	var paragraphs []string
+func TestSendLong_SplitsOnLineBoundaries(t *testing.T) {
+	var lines []string
 	for i := 0; i < 100; i++ {
-		paragraphs = append(paragraphs, strings.Repeat("x", 100))
+		lines = append(lines, strings.Repeat("x", 100))
 	}
-	text := strings.Join(paragraphs, "\n\n")
+	text := strings.Join(lines, "\n")
 
 	rec := &recordingSender{}
 	if err := SendLong(context.Background(), rec, text); err != nil {
@@ -54,15 +59,136 @@ func TestSendLong_SplitsOnParagraphBoundaries(t *testing.T) {
 	}
 }
 
-func TestSplitMessage_HardSplitsOversizedParagraph(t *testing.T) {
+func TestSplitMessage_HardSplitsOversizedLine(t *testing.T) {
 	huge := strings.Repeat("y", MaxMessageLen*2+10)
 	chunks := splitMessage(huge, MaxMessageLen)
 	if len(chunks) < 2 {
-		t.Fatalf("expected multiple chunks for oversized paragraph, got %d", len(chunks))
+		t.Fatalf("expected multiple chunks for oversized line, got %d", len(chunks))
 	}
 	for _, c := range chunks {
 		if len(c) > MaxMessageLen {
 			t.Errorf("chunk length %d exceeds limit %d", len(c), MaxMessageLen)
 		}
+	}
+}
+
+// TestSplitMessage_NeverSplitsMidRune builds a single line of multi-byte
+// runes (as would appear in a price line: "€", "→", "•") long enough to
+// need a hard split, and verifies every resulting chunk is valid UTF-8 —
+// the byte-slicing bug this replaces (`p[:limit]`) could cut a rune in
+// half.
+func TestSplitMessage_NeverSplitsMidRune(t *testing.T) {
+	huge := strings.Repeat("€→•", MaxMessageLen) // well over the limit, 3-byte runes throughout
+	chunks := splitMessage(huge, MaxMessageLen)
+	if len(chunks) < 2 {
+		t.Fatalf("expected multiple chunks, got %d", len(chunks))
+	}
+	for i, c := range chunks {
+		if !utf8.ValidString(c) {
+			t.Errorf("chunk %d is not valid UTF-8: %q", i, c)
+		}
+		if len(c) > MaxMessageLen {
+			t.Errorf("chunk %d length %d exceeds limit %d", i, len(c), MaxMessageLen)
+		}
+	}
+}
+
+// TestSplitMessage_NeverSplitsInsideHTMLTag simulates a large FormatDiff
+// output — many "• Name — price\n" lines under a "<b>New</b>" header —
+// and verifies no chunk contains an unbalanced "<b>"/"</b>" pair. Each
+// line is a complete unit, so splitting on "\n" (not raw bytes) must never
+// land inside a tag.
+func TestSplitMessage_NeverSplitsInsideHTMLTag(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("<b>New</b>\n")
+	for i := 0; i < 500; i++ {
+		fmt.Fprintf(&b, "• Kit Number %d — €54.99\n", i)
+	}
+	text := strings.TrimRight(b.String(), "\n")
+
+	chunks := splitMessage(text, MaxMessageLen)
+	if len(chunks) < 2 {
+		t.Fatalf("expected multiple chunks, got %d", len(chunks))
+	}
+	for i, c := range chunks {
+		if strings.Count(c, "<b>") != strings.Count(c, "</b>") {
+			t.Errorf("chunk %d has unbalanced <b> tags:\n%s", i, c)
+		}
+	}
+}
+
+// TestSendMessage_RetriesOnce429ThenSucceeds verifies a 429 response with
+// a retry_after hint is waited out and the send retried exactly once.
+func TestSendMessage_RetriesOnce429ThenSucceeds(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			fmt.Fprint(w, `{"ok":false,"description":"Too Many Requests: retry after 1","parameters":{"retry_after":1}}`)
+			return
+		}
+		fmt.Fprint(w, `{"ok":true}`)
+	}))
+	defer srv.Close()
+
+	c := NewClient("token", "chat")
+	c.apiBase = srv.URL
+
+	start := time.Now()
+	if err := c.SendMessage(context.Background(), "hello"); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("calls = %d, want 2 (initial + one retry)", calls)
+	}
+	if elapsed := time.Since(start); elapsed < time.Second {
+		t.Errorf("elapsed = %v, want at least the 1s retry_after wait", elapsed)
+	}
+}
+
+// TestSendMessage_DoesNotRetryTwice verifies a second consecutive 429 is
+// returned as an error rather than retried again — "retry once" means once.
+func TestSendMessage_DoesNotRetryTwice(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, `{"ok":false,"description":"still limited","parameters":{"retry_after":0}}`)
+	}))
+	defer srv.Close()
+
+	c := NewClient("token", "chat")
+	c.apiBase = srv.URL
+
+	if err := c.SendMessage(context.Background(), "hello"); err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d, want 1 (retry_after=0 means don't retry)", calls)
+	}
+}
+
+// TestSendMessage_UsesHTMLParseMode guards against regressing back to
+// Telegram's deprecated legacy Markdown mode.
+func TestSendMessage_UsesHTMLParseMode(t *testing.T) {
+	var gotParseMode string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm: %v", err)
+		}
+		gotParseMode = r.FormValue("parse_mode")
+		fmt.Fprint(w, `{"ok":true}`)
+	}))
+	defer srv.Close()
+
+	c := NewClient("token", "chat")
+	c.apiBase = srv.URL
+
+	if err := c.SendMessage(context.Background(), "hello"); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if gotParseMode != "HTML" {
+		t.Errorf("parse_mode = %q, want HTML", gotParseMode)
 	}
 }
