@@ -2,10 +2,7 @@ package scraper
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"math/rand"
 	"net/http"
 	"regexp"
 	"sort"
@@ -19,7 +16,6 @@ const (
 	geeksHeavenName    = "GeeksHeaven"
 	geeksHeavenHost    = "https://www.geeksheaven.nl"
 	geeksHeavenBaseURL = geeksHeavenHost + "/gundam-model-kits/"
-	geeksHeavenUA      = "gunpla-collector/1.0 (+https://github.com/; contact via shop enquiry form)"
 )
 
 // geeksHeavenGradePatterns maps subcategory title patterns to the grade
@@ -47,22 +43,23 @@ func classifyGrade(categoryTitle string) (grade string, ok bool) {
 }
 
 type GeeksHeaven struct {
-	httpClient *http.Client
-	host       string // scheme+host, overridable in tests
-	baseURL    string
-	userAgent  string
-	// delay is the minimum wait between requests, honoring robots.txt's
-	// `Crawl-delay: 2`. A small random jitter is added on top.
-	delay time.Duration
+	fetcher httpFetcher
+	host    string // scheme+host, overridable in tests
+	baseURL string
 }
 
 func NewGeeksHeaven() *GeeksHeaven {
 	return &GeeksHeaven{
-		httpClient: &http.Client{Timeout: 20 * time.Second},
-		host:       geeksHeavenHost,
-		baseURL:    geeksHeavenBaseURL,
-		userAgent:  geeksHeavenUA,
-		delay:      2 * time.Second,
+		fetcher: httpFetcher{
+			httpClient: &http.Client{Timeout: 20 * time.Second},
+			userAgent:  defaultUserAgent,
+			// Minimum wait between requests, honoring robots.txt's
+			// `Crawl-delay: 2`, plus jitter on top.
+			delay:  2 * time.Second,
+			jitter: 500 * time.Millisecond,
+		},
+		host:    geeksHeavenHost,
+		baseURL: geeksHeavenBaseURL,
 	}
 }
 
@@ -101,13 +98,9 @@ type categoryProduct struct {
 }
 
 func (g *GeeksHeaven) FetchAll(ctx context.Context) ([]ScrapedSet, error) {
-	idxBody, err := g.get(ctx, g.baseURL+"?format=json")
-	if err != nil {
-		return nil, fmt.Errorf("fetch category index: %w", err)
-	}
 	var idx indexResponse
-	if err := json.Unmarshal(idxBody, &idx); err != nil {
-		return nil, fmt.Errorf("parse category index: %w", err)
+	if err := g.fetcher.getJSON(ctx, g.baseURL+"?format=json", &idx); err != nil {
+		return nil, fmt.Errorf("category index: %w", err)
 	}
 
 	type gradeCategory struct {
@@ -127,24 +120,14 @@ func (g *GeeksHeaven) FetchAll(ctx context.Context) ([]ScrapedSet, error) {
 	sort.Slice(categories, func(i, j int) bool { return categories[i].url < categories[j].url })
 
 	seen := map[string]ScrapedSet{}
-	first := true
 	for _, cat := range categories {
 		page := 1
 		totalPages := 1
 		for page <= totalPages {
-			if !first {
-				g.sleep()
-			}
-			first = false
-
 			pageURL := fmt.Sprintf("%s/%s/page%d.ajax?format=json", g.host, cat.url, page)
-			body, err := g.get(ctx, pageURL)
-			if err != nil {
-				return nil, fmt.Errorf("fetch %s page %d: %w", cat.url, page, err)
-			}
 			var resp categoryPageResponse
-			if err := json.Unmarshal(body, &resp); err != nil {
-				return nil, fmt.Errorf("parse %s page %d: %w", cat.url, page, err)
+			if err := g.fetcher.getJSON(ctx, pageURL, &resp); err != nil {
+				return nil, fmt.Errorf("category %s page %d: %w", cat.url, page, err)
 			}
 			totalPages = resp.Pages
 			if totalPages < 1 {
@@ -182,28 +165,4 @@ func (g *GeeksHeaven) absoluteURL(u string) string {
 		return u
 	}
 	return g.host + "/" + u
-}
-
-func (g *GeeksHeaven) get(ctx context.Context, url string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", g.userAgent)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := g.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status %d from %s", resp.StatusCode, url)
-	}
-	return io.ReadAll(resp.Body)
-}
-
-func (g *GeeksHeaven) sleep() {
-	jitter := time.Duration(rand.Intn(500)) * time.Millisecond
-	time.Sleep(g.delay + jitter)
 }

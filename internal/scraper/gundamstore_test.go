@@ -44,11 +44,9 @@ func TestGundamStore_FetchAll(t *testing.T) {
 	defer srv.Close()
 
 	g := &GundamStore{
-		httpClient: srv.Client(),
-		host:       srv.URL,
-		baseURL:    srv.URL + "/collections/mg-master-grade",
-		userAgent:  "test",
-		delay:      0,
+		fetcher: httpFetcher{httpClient: srv.Client(), userAgent: "test"},
+		host:    srv.URL,
+		baseURL: srv.URL + "/collections/mg-master-grade",
 	}
 
 	sets, err := g.FetchAll(context.Background())
@@ -127,11 +125,9 @@ func TestGundamStore_FetchAll_PaginatesUntilShortPage(t *testing.T) {
 	defer srv.Close()
 
 	g := &GundamStore{
-		httpClient: srv.Client(),
-		host:       srv.URL,
-		baseURL:    srv.URL + "/collections/mg-master-grade",
-		userAgent:  "test",
-		delay:      0,
+		fetcher: httpFetcher{httpClient: srv.Client(), userAgent: "test"},
+		host:    srv.URL,
+		baseURL: srv.URL + "/collections/mg-master-grade",
 	}
 
 	sets, err := g.FetchAll(context.Background())
@@ -152,11 +148,9 @@ func TestGundamStore_FetchAll_NoProductsIsError(t *testing.T) {
 	defer srv.Close()
 
 	g := &GundamStore{
-		httpClient: srv.Client(),
-		host:       srv.URL,
-		baseURL:    srv.URL + "/collections/mg-master-grade",
-		userAgent:  "test",
-		delay:      0,
+		fetcher: httpFetcher{httpClient: srv.Client(), userAgent: "test"},
+		host:    srv.URL,
+		baseURL: srv.URL + "/collections/mg-master-grade",
 	}
 
 	if _, err := g.FetchAll(context.Background()); err == nil {

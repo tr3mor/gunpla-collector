@@ -45,3 +45,17 @@ func ParseEuroPriceString(s string) (int, error) {
 	}
 	return CentsFromDecimal(f), nil
 }
+
+// centsFromPriceString parses a plain decimal price string (e.g. Shopify's
+// variant.price, "92.00") into integer cents. Unlike ParseEuroPriceString,
+// there's no locale formatting to undo.
+func centsFromPriceString(s string) (int, error) {
+	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse price %q: %w", s, err)
+	}
+	if f < 0 {
+		return 0, fmt.Errorf("negative price %q", s)
+	}
+	return CentsFromDecimal(f), nil
+}

@@ -12,7 +12,9 @@ Currently supports:
 More shops can be added by implementing the `scraper.Scraper` interface —
 see `internal/scraper/geeksheaven.go` (Lightspeed eCom JSON API) or
 `internal/scraper/gundamstore.go` (Shopify `products.json` API) as
-templates.
+templates. Both embed the shared rate-limited, size-capped JSON client in
+`internal/scraper/http.go`, so a new scraper only needs its own URL
+construction and response-shape structs.
 
 ## How it works
 

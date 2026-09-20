@@ -31,7 +31,7 @@ func TestClassifyGrade(t *testing.T) {
 	}
 }
 
-func TestFetchAll(t *testing.T) {
+func TestGeeksHeaven_FetchAll(t *testing.T) {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/gundam-model-kits/", func(w http.ResponseWriter, r *http.Request) {
@@ -80,11 +80,9 @@ func TestFetchAll(t *testing.T) {
 	defer srv.Close()
 
 	g := &GeeksHeaven{
-		httpClient: srv.Client(),
-		host:       srv.URL,
-		baseURL:    srv.URL + "/gundam-model-kits/",
-		userAgent:  "test",
-		delay:      0,
+		fetcher: httpFetcher{httpClient: srv.Client(), userAgent: "test"},
+		host:    srv.URL,
+		baseURL: srv.URL + "/gundam-model-kits/",
 	}
 
 	sets, err := g.FetchAll(context.Background())
