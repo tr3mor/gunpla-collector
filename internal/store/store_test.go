@@ -159,6 +159,36 @@ func TestApplyRun_RollsBackOnError(t *testing.T) {
 	}
 }
 
+// TestInsertPriceHistory_RejectsDuplicateSetRunPair verifies the unique
+// index added in migration 3: PriceChanges joins price_history to itself
+// on (set_id, run_id) and assumes exactly one row per pair, so a second
+// insert for the same pair must fail rather than silently create an
+// ambiguous join.
+func TestInsertPriceHistory_RejectsDuplicateSetRunPair(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	shop, err := s.GetOrCreateShop(ctx, "test-shop", "Test Shop", "https://example.com")
+	if err != nil {
+		t.Fatalf("GetOrCreateShop: %v", err)
+	}
+	runID, err := s.StartRun(ctx, shop.ID, "2026-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("StartRun: %v", err)
+	}
+	setID, err := s.UpsertSet(ctx, shop.ID, "ext-1", "u1", "Kit One", "MG", "2026-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("UpsertSet: %v", err)
+	}
+
+	if err := s.InsertPriceHistory(ctx, setID, runID, 5000, "EUR", nil, "2026-01-01T00:01:00Z"); err != nil {
+		t.Fatalf("InsertPriceHistory (first): %v", err)
+	}
+	if err := s.InsertPriceHistory(ctx, setID, runID, 5000, "EUR", nil, "2026-01-01T00:01:00Z"); err == nil {
+		t.Fatal("expected error inserting a second price_history row for the same (set_id, run_id), got nil")
+	}
+}
+
 // TestOpen_WALAllowsConcurrentReadDuringWrite opens the same database file
 // from two separate Store instances (simulating two overlapping processes,
 // e.g. an overrunning cron job) and verifies a read on one succeeds while

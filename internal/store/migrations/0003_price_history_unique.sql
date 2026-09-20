@@ -1,0 +1,14 @@
+-- Migration 3: PriceChanges (see store.go) joins price_history to itself
+-- on (set_id, run_id) and assumes exactly one row per pair. Nothing in the
+-- write path (InsertPriceHistory is called once per set per run, inside
+-- ApplyRun's transaction) can currently produce a duplicate, but there was
+-- no constraint actually enforcing that — this makes it structural instead
+-- of "true because nothing violates it yet".
+--
+-- price_history.currency's `DEFAULT 'EUR'` (from the baseline schema) is
+-- deliberately left in place rather than reworked here: SQLite can't drop
+-- a column default without a full table rebuild, and every INSERT already
+-- passes currency explicitly (see InsertPriceHistory), so the default is
+-- dead weight rather than a live footgun. New shops in a different
+-- currency are unaffected as long as that stays true.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_price_history_set_run ON price_history(set_id, run_id);
