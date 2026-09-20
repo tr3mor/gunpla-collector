@@ -3,7 +3,10 @@
 // about individual shop implementations.
 package scraper
 
-import "context"
+import (
+	"context"
+	"sort"
+)
 
 type ScrapedSet struct {
 	ExternalID string
@@ -13,6 +16,10 @@ type ScrapedSet struct {
 	PriceCents int
 	Currency   string
 	InStock    *bool
+	// EAN/SKU: canonical product identifiers, kept for a future cross-shop
+	// matching feature. Not every shop exposes both, so either may be empty.
+	EAN string
+	SKU string
 }
 
 type Scraper interface {
@@ -35,11 +42,13 @@ func Get(slug string) (Scraper, bool) {
 	return s, ok
 }
 
-// All returns every registered scraper.
+// All returns every registered scraper, sorted by slug (registry is a map,
+// so iteration order would otherwise vary run to run).
 func All() []Scraper {
 	all := make([]Scraper, 0, len(registry))
 	for _, s := range registry {
 		all = append(all, s)
 	}
+	sort.Slice(all, func(i, j int) bool { return all[i].ShopSlug() < all[j].ShopSlug() })
 	return all
 }

@@ -31,7 +31,7 @@ func TestClassifyGrade(t *testing.T) {
 	}
 }
 
-func TestFetchAll(t *testing.T) {
+func TestGeeksHeaven_FetchAll(t *testing.T) {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/gundam-model-kits/", func(w http.ResponseWriter, r *http.Request) {
@@ -80,11 +80,9 @@ func TestFetchAll(t *testing.T) {
 	defer srv.Close()
 
 	g := &GeeksHeaven{
-		httpClient: srv.Client(),
-		host:       srv.URL,
-		baseURL:    srv.URL + "/gundam-model-kits/",
-		userAgent:  "test",
-		delay:      0,
+		fetcher: httpFetcher{httpClient: srv.Client(), userAgent: "test"},
+		host:    srv.URL,
+		baseURL: srv.URL + "/gundam-model-kits/",
 	}
 
 	sets, err := g.FetchAll(context.Background())
@@ -106,6 +104,9 @@ func TestFetchAll(t *testing.T) {
 	}
 	if one.Name != "MG One" || one.Grade != "MG" || one.PriceCents != 5499 || one.Currency != "EUR" {
 		t.Errorf("set 101 = %+v, unexpected fields", one)
+	}
+	if one.EAN != "e101" || one.SKU != "s101" {
+		t.Errorf("set 101 EAN/SKU = %q/%q, want e101/s101", one.EAN, one.SKU)
 	}
 	if one.InStock == nil || !*one.InStock {
 		t.Errorf("set 101 expected in stock")

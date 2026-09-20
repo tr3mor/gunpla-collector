@@ -12,18 +12,33 @@ Currently supports:
 More shops can be added by implementing the `scraper.Scraper` interface —
 see `internal/scraper/geeksheaven.go` (Lightspeed eCom JSON API) or
 `internal/scraper/gundamstore.go` (Shopify `products.json` API) as
-templates.
+templates. Both embed the shared rate-limited, size-capped JSON client in
+`internal/scraper/http.go`, so a new scraper only needs its own URL
+construction and response-shape structs.
 
 ## How it works
 
-- `gunpla-collector collect [--shop=geeksheaven]` fetches the current
-  catalog (name, price, stock) from each shop's category listing JSON API
-  and stores a snapshot, keeping full price history.
-- `gunpla-collector report [--shop=geeksheaven]` diffs the latest snapshot
-  against the previous one and sends a Telegram message: new sets, removed
-  sets, and price changes.
+- `gunpla-collector collect [--shop=geeksheaven] [--force]` fetches the
+  current catalog (name, price, stock) from each shop's category listing
+  JSON API and stores a snapshot, keeping full price history. A run
+  returning under half the previous run's set count is refused (treated as
+  a broken scraper, not a mass removal) unless `--force` (or
+  `GUNPLA_FORCE=1`) is set — use that after confirming by hand that a shop
+  genuinely shrank its catalog.
+- `gunpla-collector report [--shop=geeksheaven]` diffs the latest
+  successful collect run against the last one it already reported on, and
+  sends a Telegram message: new sets, removed sets, and price changes.
+  It's idempotent — running it again before the next `collect` finds
+  nothing new and sends nothing. If the most recent `collect` run failed
+  (or crashed without recording a failure), it sends a warning instead,
+  every time `report` runs, until a `collect` succeeds again.
 - Both default to running against every active shop in the database when
-  `--shop` is omitted and `GUNPLA_SHOPS` is unset.
+  `--shop` is omitted and `GUNPLA_SHOPS` is unset — restricted to shops
+  that still have a scraper registered in this binary, so retiring a shop
+  from the code stops it from being collected/reported without also
+  needing a DB change.
+- Flags accept both `--name=value` and `--name value` (and single-dash
+  `-name`), and `--help`/`-h` prints usage.
 
 GeeksHeaven runs on Lightspeed eCom (Shoplightspeed), whose storefront
 supports a `?format=json` API on every category page. Gundam Store runs on
@@ -52,6 +67,8 @@ Environment variables:
 | `GUNPLA_TELEGRAM_BOT_TOKEN`    | —                   | required for `report`                                    |
 | `GUNPLA_TELEGRAM_CHAT_ID`      | —                   | required for `report`                                    |
 | `GUNPLA_SHOPS`                 | (all active shops) | comma-separated slugs, e.g. `geeksheaven,gundamstore`     |
+| `GUNPLA_RUN_TIMEOUT`           | `30m` (collect) / `5m` (report) | whole-run timeout, Go duration string e.g. `45m` |
+| `GUNPLA_FORCE`                 | unset (false)       | collect only: equivalent to `--force`, for use from `docker compose exec` |
 
 ## Running locally
 
@@ -85,9 +102,10 @@ Cron runs *inside* the container (busybox `crond` as PID 1, see
 it stays correct across the CET/CEST switch). The SQLite file lives on the
 `gunpla-data` named volume so it survives rebuilds.
 
-`report` always sends a message, even when nothing changed ("No changes
-today.") — useful for confirming the daily job actually ran, especially
-right after first setting this up.
+`report` sends a "No changes today." message when there's something new to
+report but nothing in it actually changed; it sends nothing at all when
+there's nothing new to report (e.g. run it twice in a row). If `collect`
+failed, `report` sends a warning instead — see "How it works" above.
 
 To trigger a run manually without waiting for cron:
 
@@ -107,5 +125,11 @@ Store JSON API pagination/grade-filtering logic (against a local `httptest`
 server, no network), the new/removed/price-change diff logic and Telegram
 message formatting including per-shop currency symbols (synthetic data),
 the sanity guard that stops a broken scrape from being interpreted as mass
-removal, and — against a real temporary SQLite file — the atomic
-collect-run transaction (`store.ApplyRun`) and foreign-key enforcement.
+removal, the report idempotency logic (unreported-run tracking, skipping
+already-reported runs, alerting on a failed or stuck collect run), and —
+against a real temporary SQLite file — the atomic collect-run transaction
+(`store.ApplyRun`), foreign-key enforcement, and schema migrations.
+
+CI (`.github/workflows/ci.yml`) runs `go vet`, `go test -race`, and
+[golangci-lint](https://golangci-lint.run/) (config in `.golangci.yml`) on
+every push and PR against `main`.

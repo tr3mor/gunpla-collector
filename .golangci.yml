@@ -1,0 +1,19 @@
+version: "2"
+
+# Default linter set (errcheck, govet, ineffassign, staticcheck, unused).
+# gosec stays off — no untrusted-input handling here that warrants it.
+linters:
+  enable:
+    - errcheck
+  exclusions:
+    rules:
+      # Test files: canned httptest writes and cleanup Close() calls
+      # aren't worth asserting on.
+      - path: _test\.go
+        linters:
+          - errcheck
+      # A deferred Close()/Rollback() with a dropped error is the normal
+      # Go idiom — the op already succeeded, or the tx is already toast.
+      - linters:
+          - errcheck
+        text: '^Error return value of `.*\.(Close|Rollback)` is not checked$'

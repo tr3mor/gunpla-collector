@@ -134,7 +134,7 @@ func TestRun_Success(t *testing.T) {
 	shop := store.Shop{ID: 1, Slug: "fake"}
 	sc := &fakeScraper{sets: mkSets(3)}
 
-	if err := Run(context.Background(), db, shop, sc, discardLogger()); err != nil {
+	if err := Run(context.Background(), db, shop, sc, discardLogger(), Options{}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -155,7 +155,7 @@ func TestRun_FetchErrorDoesNotTouchSets(t *testing.T) {
 	shop := store.Shop{ID: 1, Slug: "fake"}
 	sc := &fakeScraper{err: errors.New("boom")}
 
-	if err := Run(context.Background(), db, shop, sc, discardLogger()); err == nil {
+	if err := Run(context.Background(), db, shop, sc, discardLogger(), Options{}); err == nil {
 		t.Fatal("expected error, got nil")
 	}
 
@@ -171,17 +171,15 @@ func TestRun_FetchErrorDoesNotTouchSets(t *testing.T) {
 	}
 }
 
-// TestRun_SanityGuardPreventsMassRemoval verifies the guard from spec §4.3
-// step 5: a run that returns far fewer sets than the previous successful
-// run is treated as a failure, and must not touch sets/mark anything
-// removed (i.e. DeactivateMissing is never called).
+// A run returning far fewer sets than the previous one must fail instead
+// of being treated as a mass removal — and must not touch sets at all.
 func TestRun_SanityGuardPreventsMassRemoval(t *testing.T) {
 	db := newFakeStore()
 	shop := store.Shop{ID: 1, Slug: "fake"}
 
 	// Seed a healthy baseline run with 100 sets.
 	baseline := &fakeScraper{sets: mkSets(100)}
-	if err := Run(context.Background(), db, shop, baseline, discardLogger()); err != nil {
+	if err := Run(context.Background(), db, shop, baseline, discardLogger(), Options{}); err != nil {
 		t.Fatalf("baseline Run: %v", err)
 	}
 	if len(db.deactivateCalls) != 1 {
@@ -190,18 +188,42 @@ func TestRun_SanityGuardPreventsMassRemoval(t *testing.T) {
 
 	// A broken scraper suddenly returns only 10 sets (< 50% of 100).
 	broken := &fakeScraper{sets: mkSets(10)}
-	err := Run(context.Background(), db, shop, broken, discardLogger())
+	err := Run(context.Background(), db, shop, broken, discardLogger(), Options{})
 	if err == nil {
 		t.Fatal("expected sanity guard error, got nil")
 	}
 
-	// Crucially: no additional DeactivateMissing call happened, so no set
-	// from the baseline run was wrongly marked removed.
+	// No second deactivate call means the guard short-circuited before
+	// touching any sets from the baseline run.
 	if len(db.deactivateCalls) != 1 {
-		t.Errorf("DeactivateMissing called %d times total, want still 1 (guard must short-circuit before step 3-4)", len(db.deactivateCalls))
+		t.Errorf("DeactivateMissing called %d times total, want still 1", len(db.deactivateCalls))
 	}
 	r := db.runs[2]
 	if r.status != "failed" {
 		t.Errorf("second run status = %q, want failed", r.status)
+	}
+}
+
+// Options{Force: true} lets through a run the guard would otherwise refuse.
+func TestRun_ForceBypassesSanityGuard(t *testing.T) {
+	db := newFakeStore()
+	shop := store.Shop{ID: 1, Slug: "fake"}
+
+	baseline := &fakeScraper{sets: mkSets(100)}
+	if err := Run(context.Background(), db, shop, baseline, discardLogger(), Options{}); err != nil {
+		t.Fatalf("baseline Run: %v", err)
+	}
+
+	broken := &fakeScraper{sets: mkSets(10)}
+	if err := Run(context.Background(), db, shop, broken, discardLogger(), Options{Force: true}); err != nil {
+		t.Fatalf("forced Run: %v", err)
+	}
+
+	if len(db.deactivateCalls) != 2 {
+		t.Errorf("DeactivateMissing called %d times, want 2 (guard bypassed, so this run applied normally)", len(db.deactivateCalls))
+	}
+	r := db.runs[2]
+	if r.status != "success" || r.setsFound != 10 {
+		t.Errorf("forced run record = %+v, want status=success setsFound=10", r)
 	}
 }

@@ -86,13 +86,25 @@ func TestFormatDiff_PriceChangeZeroOldPrice(t *testing.T) {
 	}
 }
 
-func TestFormatDiff_EscapesMarkdownInNames(t *testing.T) {
-	newSets := []store.ReportItem{{Name: "RX-78 [Ver.2.0] *Limited*", PriceCents: 1000}}
+func TestFormatDiff_EscapesHTMLInNames(t *testing.T) {
+	newSets := []store.ReportItem{{Name: "RX-78 <Ver 2.0> R&D", PriceCents: 1000}}
 	msg := FormatDiff("Shop", newSets, nil, nil)
-	if strings.Contains(msg, "*Limited*") {
-		t.Errorf("expected asterisks around Limited to be escaped:\n%s", msg)
+	if strings.Contains(msg, "<Ver 2.0>") || strings.Contains(msg, "R&D") {
+		t.Errorf("expected HTML special chars in the set name to be escaped:\n%s", msg)
 	}
-	if !strings.Contains(msg, `\*Limited\*`) || !strings.Contains(msg, `\[Ver.2.0]`) {
-		t.Errorf("expected escaped markdown special chars in name:\n%s", msg)
+	if !strings.Contains(msg, "&lt;Ver 2.0&gt;") || !strings.Contains(msg, "R&amp;D") {
+		t.Errorf("expected escaped HTML entities in name:\n%s", msg)
+	}
+}
+
+// FormatDiff's own <b> tags must survive unescaped — only untrusted
+// content (set names) goes through esc().
+func TestFormatDiff_DoesNotEscapeItsOwnHTMLTags(t *testing.T) {
+	msg := FormatDiff("Shop", []store.ReportItem{{Name: "Kit", PriceCents: 1000}}, nil, nil)
+	if !strings.Contains(msg, "<b>Shop</b>") {
+		t.Errorf("expected literal <b>Shop</b>, got:\n%s", msg)
+	}
+	if !strings.Contains(msg, "<b>New</b>") {
+		t.Errorf("expected literal <b>New</b> section header, got:\n%s", msg)
 	}
 }

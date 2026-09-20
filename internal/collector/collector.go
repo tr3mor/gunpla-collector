@@ -18,6 +18,15 @@ import (
 // failure instead of a mass removal.
 const minSetsRatio = 0.5
 
+// Options controls one collect run's behavior beyond the shop/scraper it
+// runs against.
+type Options struct {
+	// Force skips the sanity guard (minSetsRatio). Use when a shop has
+	// genuinely shrunk its catalog and the guard would otherwise block
+	// every run forever.
+	Force bool
+}
+
 type Store interface {
 	StartRun(ctx context.Context, shopID int64, startedAt string) (int64, error)
 	FinishRunFailed(ctx context.Context, runID int64, finishedAt string, errMsg string) error
@@ -28,7 +37,7 @@ type Store interface {
 	ApplyRun(ctx context.Context, shopID, runID int64, sets []scraper.ScrapedSet, now string) error
 }
 
-func Run(ctx context.Context, db Store, shop store.Shop, s scraper.Scraper, logger *slog.Logger) error {
+func Run(ctx context.Context, db Store, shop store.Shop, s scraper.Scraper, logger *slog.Logger, opts Options) error {
 	now := func() string { return time.Now().UTC().Format(time.RFC3339) }
 
 	startedAt := now()
@@ -49,10 +58,14 @@ func Run(ctx context.Context, db Store, shop store.Shop, s scraper.Scraper, logg
 		return fmt.Errorf("check previous run count for %s: %w", shop.Slug, err)
 	}
 	if ok && float64(len(sets)) < float64(prevCount)*minSetsRatio {
-		msg := fmt.Sprintf("sanity guard: fetched %d sets, previous successful run had %d (below %.0f%% threshold) — refusing to treat as mass removal",
-			len(sets), prevCount, minSetsRatio*100)
-		_ = db.FinishRunFailed(ctx, runID, now(), msg)
-		return fmt.Errorf("%s", msg)
+		if !opts.Force {
+			msg := fmt.Sprintf("sanity guard: fetched %d sets, previous successful run had %d (below %.0f%% threshold) — refusing to treat as mass removal; rerun with --force to override",
+				len(sets), prevCount, minSetsRatio*100)
+			_ = db.FinishRunFailed(ctx, runID, now(), msg)
+			return fmt.Errorf("%s", msg)
+		}
+		logger.Warn("sanity guard tripped but --force set — proceeding anyway",
+			"shop", shop.Slug, "sets_found", len(sets), "previous_sets_found", prevCount)
 	}
 
 	if err := db.ApplyRun(ctx, shop.ID, runID, sets, now()); err != nil {
