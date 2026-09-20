@@ -23,7 +23,11 @@ jobs:
       - name: go test -race
         run: go test -race ./...
 
+      # v6 of this action only supports golangci-lint v1; .golangci.yml here
+      # is v2-schema (matching the v2.12 CLI used to write/verify it), so
+      # this needs v7+. Pinned to the current major (v9) per the action's
+      # own README.
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12
