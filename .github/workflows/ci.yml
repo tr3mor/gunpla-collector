@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: go vet
+        run: go vet ./...
+
+      # mattn/go-sqlite3 is cgo, so -race needs CGO_ENABLED=1 (the default
+      # on the ubuntu-latest runner, which ships gcc).
+      - name: go test -race
+        run: go test -race ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v2.12

@@ -129,3 +129,7 @@ removal, the report idempotency logic (unreported-run tracking, skipping
 already-reported runs, alerting on a failed or stuck collect run), and —
 against a real temporary SQLite file — the atomic collect-run transaction
 (`store.ApplyRun`), foreign-key enforcement, and schema migrations.
+
+CI (`.github/workflows/ci.yml`) runs `go vet`, `go test -race`, and
+[golangci-lint](https://golangci-lint.run/) (config in `.golangci.yml`) on
+every push and PR against `main`.
