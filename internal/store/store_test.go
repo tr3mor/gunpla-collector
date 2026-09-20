@@ -236,6 +236,117 @@ func TestInsertPriceHistory_RejectsDuplicateSetRunPair(t *testing.T) {
 	}
 }
 
+// TestReportQueries exercises NewSets, RemovedSets, and PriceChanges
+// together against real SQLite (reporter's own tests only cover these
+// through a fake store) across three runs, covering every case the diff
+// report needs to get right: a set that's new, one that's removed, one
+// whose price changed, one that's unchanged (must not appear anywhere),
+// and one that's removed then reactivated a run later — which must show
+// up as "new" again on reactivation, not "still removed" or silently
+// merged with its first appearance.
+func TestReportQueries(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	shop, err := s.GetOrCreateShop(ctx, "test-shop", "Test Shop", "https://example.com")
+	if err != nil {
+		t.Fatalf("GetOrCreateShop: %v", err)
+	}
+
+	applyRun := func(startedAt, appliedAt string, sets []scraper.ScrapedSet) int64 {
+		t.Helper()
+		runID, err := s.StartRun(ctx, shop.ID, startedAt)
+		if err != nil {
+			t.Fatalf("StartRun: %v", err)
+		}
+		if err := s.ApplyRun(ctx, shop.ID, runID, sets, appliedAt); err != nil {
+			t.Fatalf("ApplyRun: %v", err)
+		}
+		return runID
+	}
+	set := func(extID string, priceCents int) scraper.ScrapedSet {
+		return scraper.ScrapedSet{ExternalID: extID, URL: "u-" + extID, Name: "Kit " + extID, Grade: "MG", PriceCents: priceCents, Currency: "EUR"}
+	}
+
+	run1 := applyRun("2026-01-01T00:00:00Z", "2026-01-01T00:01:00Z", []scraper.ScrapedSet{
+		set("ext-removed", 1000),
+		set("ext-changed", 1000),
+		set("ext-unchanged", 2000),
+		set("ext-reactivated", 3000),
+	})
+
+	// run2: ext-removed and ext-reactivated both drop out; ext-changed's
+	// price moves; ext-unchanged stays the same; ext-new shows up for the
+	// first time.
+	run2 := applyRun("2026-01-02T00:00:00Z", "2026-01-02T00:01:00Z", []scraper.ScrapedSet{
+		set("ext-changed", 1500),
+		set("ext-unchanged", 2000),
+		set("ext-new", 500),
+	})
+
+	newSets, err := s.NewSets(ctx, shop.ID, run2, run1)
+	if err != nil {
+		t.Fatalf("NewSets(run2, run1): %v", err)
+	}
+	if len(newSets) != 1 || newSets[0].Name != "Kit ext-new" {
+		t.Errorf("NewSets(run2, run1) = %+v, want exactly [Kit ext-new]", newSets)
+	}
+
+	removedSets, err := s.RemovedSets(ctx, shop.ID, run2, run1)
+	if err != nil {
+		t.Fatalf("RemovedSets(run2, run1): %v", err)
+	}
+	removedNames := map[string]bool{}
+	for _, r := range removedSets {
+		removedNames[r.Name] = true
+	}
+	if len(removedSets) != 2 || !removedNames["Kit ext-removed"] || !removedNames["Kit ext-reactivated"] {
+		t.Errorf("RemovedSets(run2, run1) = %+v, want exactly [Kit ext-removed, Kit ext-reactivated]", removedSets)
+	}
+
+	changes, err := s.PriceChanges(ctx, shop.ID, run2, run1)
+	if err != nil {
+		t.Fatalf("PriceChanges(run2, run1): %v", err)
+	}
+	if len(changes) != 1 || changes[0].Name != "Kit ext-changed" || changes[0].OldCents != 1000 || changes[0].NewCents != 1500 {
+		t.Errorf("PriceChanges(run2, run1) = %+v, want exactly [Kit ext-changed: 1000 -> 1500]", changes)
+	}
+
+	// run3: ext-reactivated reappears. It must show up as new relative to
+	// run2 (where it had no price_history row) — reactivation is not
+	// treated as "still removed" or silently folded into anything else.
+	run3 := applyRun("2026-01-03T00:00:00Z", "2026-01-03T00:01:00Z", []scraper.ScrapedSet{
+		set("ext-changed", 1500),
+		set("ext-unchanged", 2000),
+		set("ext-new", 500),
+		set("ext-reactivated", 3000),
+	})
+
+	newSets, err = s.NewSets(ctx, shop.ID, run3, run2)
+	if err != nil {
+		t.Fatalf("NewSets(run3, run2): %v", err)
+	}
+	if len(newSets) != 1 || newSets[0].Name != "Kit ext-reactivated" {
+		t.Errorf("NewSets(run3, run2) = %+v, want exactly [Kit ext-reactivated] (reactivation)", newSets)
+	}
+
+	removedSets, err = s.RemovedSets(ctx, shop.ID, run3, run2)
+	if err != nil {
+		t.Fatalf("RemovedSets(run3, run2): %v", err)
+	}
+	if len(removedSets) != 0 {
+		t.Errorf("RemovedSets(run3, run2) = %+v, want none", removedSets)
+	}
+
+	changes, err = s.PriceChanges(ctx, shop.ID, run3, run2)
+	if err != nil {
+		t.Fatalf("PriceChanges(run3, run2): %v", err)
+	}
+	if len(changes) != 0 {
+		t.Errorf("PriceChanges(run3, run2) = %+v, want none (ext-changed and ext-unchanged both held steady)", changes)
+	}
+}
+
 // TestOpen_WALAllowsConcurrentReadDuringWrite opens the same database file
 // from two separate Store instances (simulating two overlapping processes,
 // e.g. an overrunning cron job) and verifies a read on one succeeds while
