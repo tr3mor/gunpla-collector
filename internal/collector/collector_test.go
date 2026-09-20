@@ -171,10 +171,10 @@ func TestRun_FetchErrorDoesNotTouchSets(t *testing.T) {
 	}
 }
 
-// TestRun_SanityGuardPreventsMassRemoval verifies the guard from spec §4.3
-// step 5: a run that returns far fewer sets than the previous successful
-// run is treated as a failure, and must not touch sets/mark anything
-// removed (i.e. DeactivateMissing is never called).
+// TestRun_SanityGuardPreventsMassRemoval verifies the guard (minSetsRatio):
+// a run that returns far fewer sets than the previous successful run is
+// treated as a failure, and must not touch sets/mark anything removed
+// (i.e. DeactivateMissing is never called).
 func TestRun_SanityGuardPreventsMassRemoval(t *testing.T) {
 	db := newFakeStore()
 	shop := store.Shop{ID: 1, Slug: "fake"}
