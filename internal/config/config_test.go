@@ -59,6 +59,30 @@ func TestParseRunTimeout(t *testing.T) {
 	}
 }
 
+func TestParseBool(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want bool
+	}{
+		{"", false},
+		{"   ", false},
+		{"1", true},
+		{"0", false},
+		{"true", true},
+		{"TRUE", true},
+		{"false", false},
+		{"  true  ", true},
+		{"not-a-bool", false}, // malformed falls back to false, not an error
+		{"yes", false},        // strconv.ParseBool doesn't accept "yes"/"no"
+	}
+	for _, c := range cases {
+		got := parseBool(c.raw)
+		if got != c.want {
+			t.Errorf("parseBool(%q) = %v, want %v", c.raw, got, c.want)
+		}
+	}
+}
+
 func TestValidateForReport(t *testing.T) {
 	cases := []struct {
 		name    string
