@@ -3,7 +3,10 @@
 // about individual shop implementations.
 package scraper
 
-import "context"
+import (
+	"context"
+	"sort"
+)
 
 type ScrapedSet struct {
 	ExternalID string
@@ -40,11 +43,14 @@ func Get(slug string) (Scraper, bool) {
 	return s, ok
 }
 
-// All returns every registered scraper.
+// All returns every registered scraper, sorted by slug — registry is a map,
+// so without sorting the order (and therefore request sequencing in
+// collect, and shop iteration order in report) would vary run to run.
 func All() []Scraper {
 	all := make([]Scraper, 0, len(registry))
 	for _, s := range registry {
 		all = append(all, s)
 	}
+	sort.Slice(all, func(i, j int) bool { return all[i].ShopSlug() < all[j].ShopSlug() })
 	return all
 }

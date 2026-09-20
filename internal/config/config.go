@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -19,6 +20,10 @@ type Config struct {
 	// backstop against a hung HTTP request or a stalled Telegram send,
 	// distinct from (and larger than) any single request's own timeout.
 	RunTimeout time.Duration
+	// Force is the env-var equivalent of collect's -force flag, so the
+	// sanity guard can be overridden from `docker compose exec` without
+	// editing the container's command.
+	Force bool
 }
 
 func Load() Config {
@@ -28,7 +33,16 @@ func Load() Config {
 		TelegramChatID: os.Getenv("GUNPLA_TELEGRAM_CHAT_ID"),
 		Shops:          parseShops(os.Getenv("GUNPLA_SHOPS")),
 		RunTimeout:     parseRunTimeout(os.Getenv("GUNPLA_RUN_TIMEOUT")),
+		Force:          parseBool(os.Getenv("GUNPLA_FORCE")),
 	}
+}
+
+// parseBool is lenient the same way parseRunTimeout is: unset or
+// unparsable is just "false", not an error this package has no logger to
+// report through.
+func parseBool(raw string) bool {
+	b, err := strconv.ParseBool(strings.TrimSpace(raw))
+	return err == nil && b
 }
 
 // parseRunTimeout parses a Go duration string (e.g. "45m", "1h"). An empty

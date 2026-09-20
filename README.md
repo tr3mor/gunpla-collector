@@ -18,9 +18,13 @@ construction and response-shape structs.
 
 ## How it works
 
-- `gunpla-collector collect [--shop=geeksheaven]` fetches the current
-  catalog (name, price, stock) from each shop's category listing JSON API
-  and stores a snapshot, keeping full price history.
+- `gunpla-collector collect [--shop=geeksheaven] [--force]` fetches the
+  current catalog (name, price, stock) from each shop's category listing
+  JSON API and stores a snapshot, keeping full price history. A run
+  returning under half the previous run's set count is refused (treated as
+  a broken scraper, not a mass removal) unless `--force` (or
+  `GUNPLA_FORCE=1`) is set — use that after confirming by hand that a shop
+  genuinely shrank its catalog.
 - `gunpla-collector report [--shop=geeksheaven]` diffs the latest
   successful collect run against the last one it already reported on, and
   sends a Telegram message: new sets, removed sets, and price changes.
@@ -29,7 +33,12 @@ construction and response-shape structs.
   (or crashed without recording a failure), it sends a warning instead,
   every time `report` runs, until a `collect` succeeds again.
 - Both default to running against every active shop in the database when
-  `--shop` is omitted and `GUNPLA_SHOPS` is unset.
+  `--shop` is omitted and `GUNPLA_SHOPS` is unset — restricted to shops
+  that still have a scraper registered in this binary, so retiring a shop
+  from the code stops it from being collected/reported without also
+  needing a DB change.
+- Flags accept both `--name=value` and `--name value` (and single-dash
+  `-name`), and `--help`/`-h` prints usage.
 
 GeeksHeaven runs on Lightspeed eCom (Shoplightspeed), whose storefront
 supports a `?format=json` API on every category page. Gundam Store runs on
@@ -59,6 +68,7 @@ Environment variables:
 | `GUNPLA_TELEGRAM_CHAT_ID`      | —                   | required for `report`                                    |
 | `GUNPLA_SHOPS`                 | (all active shops) | comma-separated slugs, e.g. `geeksheaven,gundamstore`     |
 | `GUNPLA_RUN_TIMEOUT`           | `30m` (collect) / `5m` (report) | whole-run timeout, Go duration string e.g. `45m` |
+| `GUNPLA_FORCE`                 | unset (false)       | collect only: equivalent to `--force`, for use from `docker compose exec` |
 
 ## Running locally
 

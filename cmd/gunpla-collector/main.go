@@ -5,7 +5,10 @@ package main
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -31,6 +34,15 @@ const (
 	defaultReportTimeout  = 5 * time.Minute
 )
 
+const usageText = `usage: gunpla-collector <collect|report> [-shop=<slug>] [-force]
+
+  -shop string
+        shop slug to run against (default: all active shops, or $GUNPLA_SHOPS)
+  -force
+        collect only: skip the sanity guard that refuses a run returning
+        less than half the previous run's set count (also settable via
+        $GUNPLA_FORCE=1)`
+
 func init() {
 	scraper.Register(scraper.NewGeeksHeaven())
 	scraper.Register(scraper.NewGundamStore())
@@ -47,13 +59,18 @@ func run(args []string) error {
 	if len(args) == 0 {
 		return usageError()
 	}
-
 	cmd := args[0]
-	shopFlag := ""
-	for i := 1; i < len(args); i++ {
-		if v, ok := flagValue(args[i], "--shop"); ok {
-			shopFlag = v
+	if cmd != "collect" && cmd != "report" {
+		return usageError()
+	}
+
+	flags, err := parseFlags(cmd, args[1:])
+	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			fmt.Fprintln(os.Stderr, usageText)
+			return nil
 		}
+		return fmt.Errorf("%w\n\n%s", err, usageText)
 	}
 
 	cfg := config.Load()
@@ -77,10 +94,11 @@ func run(args []string) error {
 
 	switch cmd {
 	case "collect":
-		shops, err := resolveShops(ctx, db, cfg, shopFlag)
+		shops, err := resolveShops(ctx, db, cfg, flags.shop)
 		if err != nil {
 			return err
 		}
+		opts := collector.Options{Force: flags.force || cfg.Force}
 		var firstErr error
 		for _, shop := range shops {
 			s, ok := scraper.Get(shop.Slug)
@@ -89,7 +107,7 @@ func run(args []string) error {
 				continue
 			}
 			logger.Info("starting collect", "shop", shop.Slug)
-			if err := collector.Run(ctx, db, shop, s, logger); err != nil {
+			if err := collector.Run(ctx, db, shop, s, logger, opts); err != nil {
 				logger.Error("collect failed", "shop", shop.Slug, "error", err)
 				if firstErr == nil {
 					firstErr = err
@@ -103,7 +121,7 @@ func run(args []string) error {
 		if err := cfg.ValidateForReport(); err != nil {
 			return err
 		}
-		shops, err := resolveShops(ctx, db, cfg, shopFlag)
+		shops, err := resolveShops(ctx, db, cfg, flags.shop)
 		if err != nil {
 			return err
 		}
@@ -120,16 +138,21 @@ func run(args []string) error {
 			}
 		}
 		return firstErr
-
-	default:
-		return usageError()
 	}
+
+	panic("unreachable: cmd validated to be collect or report above")
 }
 
-// resolveShops determines which shops to operate on: --shop flag wins,
-// then GUNPLA_SHOPS, then all active shops in the DB. Shops named by flag
-// or env var are registered (created) in the DB on first use, using the
-// registered scraper's shop metadata.
+// resolveShops determines which shops to operate on: -shop flag wins,
+// then GUNPLA_SHOPS, then every active shop in the DB that also has a
+// scraper registered in this binary. Shops named by flag or env var are
+// registered (created) in the DB on first use, using the registered
+// scraper's shop metadata.
+//
+// The registered-scraper filter on the "no explicit selection" path
+// matters once a shop is retired from the binary: without it, collect
+// would skip the orphaned shop with a warning every run, and report would
+// keep sending it a stale diff forever, both silently.
 func resolveShops(ctx context.Context, db *store.Store, cfg config.Config, shopFlag string) ([]store.Shop, error) {
 	var slugs []string
 	if shopFlag != "" {
@@ -155,20 +178,29 @@ func resolveShops(ctx context.Context, db *store.Store, cfg config.Config, shopF
 	}
 
 	// No explicit selection: ensure every registered scraper has a shop
-	// row, then run all active shops.
+	// row (scraper.All() is sorted by slug, so this and the result below
+	// are both deterministically ordered), then run every active shop that
+	// still has a scraper registered.
 	for _, s := range scraper.All() {
 		if _, err := db.GetOrCreateShop(ctx, s.ShopSlug(), s.ShopName(), s.BaseURL()); err != nil {
 			return nil, err
 		}
 	}
-	return db.ActiveShops(ctx)
+	active, err := db.ActiveShops(ctx)
+	if err != nil {
+		return nil, err
+	}
+	shops := make([]store.Shop, 0, len(active))
+	for _, shop := range active {
+		if _, ok := scraper.Get(shop.Slug); ok {
+			shops = append(shops, shop)
+		}
+	}
+	return shops, nil
 }
 
 // runTimeout picks the whole-run timeout for cmd: the GUNPLA_RUN_TIMEOUT
-// override if set, otherwise the command's own default. An unrecognized
-// cmd gets the (larger) collect default; it doesn't matter in practice
-// since run() rejects unknown commands via usageError before the context
-// deadline can be reached.
+// override if set, otherwise the command's own default.
 func runTimeout(cmd string, override time.Duration) time.Duration {
 	if override > 0 {
 		return override
@@ -179,14 +211,33 @@ func runTimeout(cmd string, override time.Duration) time.Duration {
 	return defaultCollectTimeout
 }
 
-func flagValue(arg, name string) (string, bool) {
-	prefix := name + "="
-	if len(arg) > len(prefix) && arg[:len(prefix)] == prefix {
-		return arg[len(prefix):], true
-	}
-	return "", false
+func usageError() error {
+	return fmt.Errorf("%s", usageText)
 }
 
-func usageError() error {
-	return fmt.Errorf("usage: gunpla-collector <collect|report> [--shop=<slug>]")
+// parsedFlags holds one invocation's flag values.
+type parsedFlags struct {
+	shop  string
+	force bool
+}
+
+// parseFlags parses args (everything after the subcommand) for cmd.
+// A returned error wrapping flag.ErrHelp means -h/-help was given —
+// not a real error, but nothing left to run; the caller decides how to
+// present that.
+//
+// Split out from run() so it's testable without touching the DB or
+// network: flag.NewFlagSet accepts both "-name value" and "-name=value"
+// (and "--name"/"--name=value" — it strips one or two leading dashes
+// identically), which also fixes the old hand-rolled parser silently
+// ignoring the space-separated form.
+func parseFlags(cmd string, args []string) (parsedFlags, error) {
+	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
+	fs.SetOutput(io.Discard) // run() formats errors/usage itself
+	shopFlag := fs.String("shop", "", "shop slug to run against (default: all active shops)")
+	forceFlag := fs.Bool("force", false, "collect only: skip the sanity guard")
+	if err := fs.Parse(args); err != nil {
+		return parsedFlags{}, err
+	}
+	return parsedFlags{shop: *shopFlag, force: *forceFlag}, nil
 }

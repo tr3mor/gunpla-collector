@@ -133,7 +133,7 @@ func (s *Store) ShopBySlug(ctx context.Context, slug string) (Shop, bool, error)
 
 func (s *Store) ActiveShops(ctx context.Context) ([]Shop, error) {
 	rows, err := s.conn.QueryContext(ctx,
-		`SELECT id, slug, name, base_url, active FROM shops WHERE active = 1`)
+		`SELECT id, slug, name, base_url, active FROM shops WHERE active = 1 ORDER BY slug`)
 	if err != nil {
 		return nil, fmt.Errorf("query active shops: %w", err)
 	}
