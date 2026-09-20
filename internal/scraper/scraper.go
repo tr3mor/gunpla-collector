@@ -13,6 +13,11 @@ type ScrapedSet struct {
 	PriceCents int
 	Currency   string
 	InStock    *bool
+	// EAN and SKU are canonical product identifiers, kept for a future
+	// cross-shop "same kit at two shops" feature — not every shop exposes
+	// both, so either may be empty.
+	EAN string
+	SKU string
 }
 
 type Scraper interface {

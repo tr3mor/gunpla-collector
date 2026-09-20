@@ -79,7 +79,9 @@ type shopifyProduct struct {
 
 type shopifyVariant struct {
 	Available bool   `json:"available"`
-	Price     string `json:"price"` // decimal string, e.g. "92.00"
+	Price     string `json:"price"`   // decimal string, e.g. "92.00"
+	SKU       string `json:"sku"`     // merchant-assigned, may be blank
+	Barcode   string `json:"barcode"` // typically EAN/UPC when set at all
 }
 
 func (g *GundamStore) FetchAll(ctx context.Context) ([]ScrapedSet, error) {
@@ -115,6 +117,8 @@ func (g *GundamStore) FetchAll(ctx context.Context) ([]ScrapedSet, error) {
 					PriceCents: priceCents,
 					Currency:   gundamStoreCurrency,
 					InStock:    &available,
+					EAN:        v.Barcode,
+					SKU:        v.SKU,
 				}
 				seen[extID] = set // last collection to see a product wins; harmless if grades overlap
 			}

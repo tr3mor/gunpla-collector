@@ -145,6 +145,8 @@ func (g *GeeksHeaven) FetchAll(ctx context.Context) ([]ScrapedSet, error) {
 					PriceCents: CentsFromDecimal(p.Price.PriceIncl),
 					Currency:   "EUR",
 					InStock:    &available,
+					EAN:        p.EAN,
+					SKU:        p.SKU,
 				}
 				seen[extID] = set // last category to see a product wins; harmless if grades overlap
 			}

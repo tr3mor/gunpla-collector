@@ -6,7 +6,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 
@@ -196,34 +195,30 @@ func (s *Store) LastSuccessfulRunSetsFound(ctx context.Context, shopID int64) (i
 
 // UpsertSet inserts a new set or updates an existing one (matched on
 // shop_id+external_id), reactivating it if it had previously been marked
-// removed. Returns the set's id.
-func (s *Store) UpsertSet(ctx context.Context, shopID int64, externalID, url, name, grade, now string) (int64, error) {
+// removed. Returns the set's id. ean and sku may be empty (not every shop
+// exposes both); empty values are stored as NULL rather than "".
+func (s *Store) UpsertSet(ctx context.Context, shopID int64, externalID, url, name, grade, ean, sku, now string) (int64, error) {
 	row := s.conn.QueryRowContext(ctx,
-		`SELECT id FROM sets WHERE shop_id = ? AND external_id = ?`, shopID, externalID)
+		`INSERT INTO sets (shop_id, external_id, url, name, grade, ean, sku, first_seen_at, last_seen_at, is_active, removed_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL)
+		 ON CONFLICT(shop_id, external_id) DO UPDATE SET
+		   url = excluded.url, name = excluded.name, grade = excluded.grade,
+		   ean = excluded.ean, sku = excluded.sku,
+		   last_seen_at = excluded.last_seen_at, is_active = 1, removed_at = NULL
+		 RETURNING id`,
+		shopID, externalID, url, name, grade, nullIfEmpty(ean), nullIfEmpty(sku), now, now)
 	var id int64
-	err := row.Scan(&id)
-	switch {
-	case err == sql.ErrNoRows:
-		res, err := s.conn.ExecContext(ctx,
-			`INSERT INTO sets (shop_id, external_id, url, name, grade, first_seen_at, last_seen_at, is_active, removed_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, 1, NULL)`,
-			shopID, externalID, url, name, grade, now, now)
-		if err != nil {
-			return 0, fmt.Errorf("insert set: %w", err)
-		}
-		return res.LastInsertId()
-	case err != nil:
-		return 0, fmt.Errorf("query set: %w", err)
-	default:
-		_, err = s.conn.ExecContext(ctx,
-			`UPDATE sets SET url = ?, name = ?, grade = ?, last_seen_at = ?, is_active = 1, removed_at = NULL
-			 WHERE id = ?`,
-			url, name, grade, now, id)
-		if err != nil {
-			return 0, fmt.Errorf("update set: %w", err)
-		}
-		return id, nil
+	if err := row.Scan(&id); err != nil {
+		return 0, fmt.Errorf("upsert set: %w", err)
 	}
+	return id, nil
+}
+
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 func (s *Store) InsertPriceHistory(ctx context.Context, setID, runID int64, priceCents int, currency string, inStock *bool, scrapedAt string) error {
@@ -256,19 +251,17 @@ func (s *Store) ApplyRun(ctx context.Context, shopID, runID int64, sets []scrape
 
 	txStore := &Store{db: s.db, conn: tx}
 
-	seenIDs := make([]string, 0, len(sets))
 	for _, sc := range sets {
-		setID, err := txStore.UpsertSet(ctx, shopID, sc.ExternalID, sc.URL, sc.Name, sc.Grade, now)
+		setID, err := txStore.UpsertSet(ctx, shopID, sc.ExternalID, sc.URL, sc.Name, sc.Grade, sc.EAN, sc.SKU, now)
 		if err != nil {
 			return fmt.Errorf("upsert set %s: %w", sc.ExternalID, err)
 		}
 		if err := txStore.InsertPriceHistory(ctx, setID, runID, sc.PriceCents, sc.Currency, sc.InStock, now); err != nil {
 			return fmt.Errorf("insert price history for set %s: %w", sc.ExternalID, err)
 		}
-		seenIDs = append(seenIDs, sc.ExternalID)
 	}
 
-	if err := txStore.DeactivateMissing(ctx, shopID, seenIDs, now); err != nil {
+	if err := txStore.DeactivateMissing(ctx, shopID, runID, now); err != nil {
 		return fmt.Errorf("deactivate missing sets: %w", err)
 	}
 
@@ -279,48 +272,19 @@ func (s *Store) ApplyRun(ctx context.Context, shopID, runID int64, sets []scrape
 	return tx.Commit()
 }
 
-// DeactivateMissing marks is_active=0/removed_at=now for every active set of
-// this shop whose external_id was not seen in the current run.
-func (s *Store) DeactivateMissing(ctx context.Context, shopID int64, seenExternalIDs []string, now string) error {
-	rows, err := s.conn.QueryContext(ctx,
-		`SELECT id, external_id FROM sets WHERE shop_id = ? AND is_active = 1`, shopID)
+// DeactivateMissing marks is_active=0/removed_at=now for every active set
+// of this shop that didn't get a price_history row in runID. Every set
+// ApplyRun's loop upserted this run also got a price_history row in the
+// same transaction (InsertPriceHistory runs right after each UpsertSet),
+// so "no price_history row for runID" and "not seen this run" are the same
+// thing — this must run after that loop, not before.
+func (s *Store) DeactivateMissing(ctx context.Context, shopID, runID int64, now string) error {
+	_, err := s.conn.ExecContext(ctx,
+		`UPDATE sets SET is_active = 0, removed_at = ?
+		 WHERE shop_id = ? AND is_active = 1
+		   AND id NOT IN (SELECT set_id FROM price_history WHERE run_id = ?)`,
+		now, shopID, runID)
 	if err != nil {
-		return fmt.Errorf("query active sets: %w", err)
-	}
-	seen := make(map[string]bool, len(seenExternalIDs))
-	for _, id := range seenExternalIDs {
-		seen[id] = true
-	}
-	var toRemove []int64
-	for rows.Next() {
-		var id int64
-		var extID string
-		if err := rows.Scan(&id, &extID); err != nil {
-			rows.Close()
-			return err
-		}
-		if !seen[extID] {
-			toRemove = append(toRemove, id)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	rows.Close()
-
-	if len(toRemove) == 0 {
-		return nil
-	}
-
-	placeholders := make([]string, len(toRemove))
-	args := make([]any, 0, len(toRemove)+1)
-	args = append(args, now)
-	for i, id := range toRemove {
-		placeholders[i] = "?"
-		args = append(args, id)
-	}
-	query := `UPDATE sets SET is_active = 0, removed_at = ? WHERE id IN (` + strings.Join(placeholders, ",") + `)`
-	if _, err := s.conn.ExecContext(ctx, query, args...); err != nil {
 		return fmt.Errorf("deactivate missing sets: %w", err)
 	}
 	return nil

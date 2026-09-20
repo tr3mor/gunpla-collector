@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
@@ -159,6 +160,52 @@ func TestApplyRun_RollsBackOnError(t *testing.T) {
 	}
 }
 
+// TestUpsertSet_PersistsAndUpdatesEANAndSKU verifies EAN/SKU are stored on
+// insert and overwritten on a later upsert for the same (shop_id,
+// external_id), including being clearable back to NULL when a shop stops
+// reporting one (rather than an empty string sticking around forever).
+func TestUpsertSet_PersistsAndUpdatesEANAndSKU(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	shop, err := s.GetOrCreateShop(ctx, "test-shop", "Test Shop", "https://example.com")
+	if err != nil {
+		t.Fatalf("GetOrCreateShop: %v", err)
+	}
+
+	setID, err := s.UpsertSet(ctx, shop.ID, "ext-1", "u1", "Kit One", "MG", "ean-1", "sku-1", "2026-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("UpsertSet (insert): %v", err)
+	}
+
+	var ean, sku sql.NullString
+	if err := s.conn.QueryRowContext(ctx, `SELECT ean, sku FROM sets WHERE id = ?`, setID).Scan(&ean, &sku); err != nil {
+		t.Fatalf("query ean/sku: %v", err)
+	}
+	if !ean.Valid || ean.String != "ean-1" || !sku.Valid || sku.String != "sku-1" {
+		t.Fatalf("after insert: ean=%+v sku=%+v, want ean-1/sku-1", ean, sku)
+	}
+
+	// Re-upsert with an updated EAN and a now-missing SKU.
+	sameID, err := s.UpsertSet(ctx, shop.ID, "ext-1", "u1", "Kit One", "MG", "ean-1-updated", "", "2026-01-02T00:00:00Z")
+	if err != nil {
+		t.Fatalf("UpsertSet (update): %v", err)
+	}
+	if sameID != setID {
+		t.Fatalf("re-upsert returned id %d, want the same id %d", sameID, setID)
+	}
+
+	if err := s.conn.QueryRowContext(ctx, `SELECT ean, sku FROM sets WHERE id = ?`, setID).Scan(&ean, &sku); err != nil {
+		t.Fatalf("query ean/sku after update: %v", err)
+	}
+	if !ean.Valid || ean.String != "ean-1-updated" {
+		t.Fatalf("after update: ean=%+v, want ean-1-updated", ean)
+	}
+	if sku.Valid {
+		t.Fatalf("after update: sku=%+v, want NULL (cleared, not empty string)", sku)
+	}
+}
+
 // TestInsertPriceHistory_RejectsDuplicateSetRunPair verifies the unique
 // index added in migration 3: PriceChanges joins price_history to itself
 // on (set_id, run_id) and assumes exactly one row per pair, so a second
@@ -176,7 +223,7 @@ func TestInsertPriceHistory_RejectsDuplicateSetRunPair(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StartRun: %v", err)
 	}
-	setID, err := s.UpsertSet(ctx, shop.ID, "ext-1", "u1", "Kit One", "MG", "2026-01-01T00:00:00Z")
+	setID, err := s.UpsertSet(ctx, shop.ID, "ext-1", "u1", "Kit One", "MG", "", "", "2026-01-01T00:00:00Z")
 	if err != nil {
 		t.Fatalf("UpsertSet: %v", err)
 	}

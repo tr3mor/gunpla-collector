@@ -105,6 +105,9 @@ func TestGeeksHeaven_FetchAll(t *testing.T) {
 	if one.Name != "MG One" || one.Grade != "MG" || one.PriceCents != 5499 || one.Currency != "EUR" {
 		t.Errorf("set 101 = %+v, unexpected fields", one)
 	}
+	if one.EAN != "e101" || one.SKU != "s101" {
+		t.Errorf("set 101 EAN/SKU = %q/%q, want e101/s101", one.EAN, one.SKU)
+	}
 	if one.InStock == nil || !*one.InStock {
 		t.Errorf("set 101 expected in stock")
 	}

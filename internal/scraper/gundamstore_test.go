@@ -16,7 +16,7 @@ func TestGundamStore_FetchAll(t *testing.T) {
 		switch r.URL.Query().Get("page") {
 		case "1":
 			w.Write([]byte(`{"products": [
-				{"id": 101, "title": "MG One", "handle": "mg-one", "variants": [{"available": true, "price": "92.00"}]},
+				{"id": 101, "title": "MG One", "handle": "mg-one", "variants": [{"available": true, "price": "92.00", "sku": "sku-101", "barcode": "ean-101"}]},
 				{"id": 102, "title": "MG Two", "handle": "mg-two", "variants": [{"available": false, "price": "54.99"}]}
 			]}`))
 		default:
@@ -75,6 +75,9 @@ func TestGundamStore_FetchAll(t *testing.T) {
 	if one.URL != srv.URL+"/products/mg-one" {
 		t.Errorf("set 101 URL = %q, want %q", one.URL, srv.URL+"/products/mg-one")
 	}
+	if one.SKU != "sku-101" || one.EAN != "ean-101" {
+		t.Errorf("set 101 SKU/EAN = %q/%q, want sku-101/ean-101", one.SKU, one.EAN)
+	}
 
 	two := byID["102"]
 	if two.InStock == nil || *two.InStock {
@@ -82,6 +85,9 @@ func TestGundamStore_FetchAll(t *testing.T) {
 	}
 	if two.PriceCents != 5499 {
 		t.Errorf("set 102 price = %d, want 5499", two.PriceCents)
+	}
+	if two.SKU != "" || two.EAN != "" {
+		t.Errorf("set 102 SKU/EAN = %q/%q, want both empty (not present in source data)", two.SKU, two.EAN)
 	}
 
 	hgOne := byID["201"]
