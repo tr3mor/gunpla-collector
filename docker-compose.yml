@@ -1,6 +1,6 @@
 services:
   gunpla-collector:
-    build: .
+    image: ghcr.io/tr3mor/gunpla-collector:${GUNPLA_IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       GUNPLA_DB_PATH: /data/gunpla.db
