@@ -93,8 +93,13 @@ sqlite3 ./gunpla.db "select name, price_cents from price_history order by id des
 
 ```sh
 cp .env.example .env   # fill in your bot token + chat id
-docker compose up -d --build
+docker compose up -d   # pulls ghcr.io/tr3mor/gunpla-collector:latest
 ```
+
+Set `GUNPLA_IMAGE_TAG` in `.env` to pin a specific release (e.g. `0.1.0`)
+instead of always tracking `latest`; see [Releases](https://github.com/tr3mor/gunpla-collector/releases)
+for available versions. To build from source instead of pulling, run
+`docker compose build` first, or add `build: .` back to `docker-compose.yml`.
 
 Cron runs *inside* the container (busybox `crond` as PID 1, see
 `crontab` and `docker-entrypoint.sh`): `collect` at 18:00, `report` at
