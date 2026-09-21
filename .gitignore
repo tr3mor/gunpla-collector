@@ -5,3 +5,4 @@
 /*.db-shm
 .env
 .DS_Store
+/windows/logs/

@@ -107,6 +107,10 @@ Cron runs *inside* the container (busybox `crond` as PID 1, see
 it stays correct across the CET/CEST switch). The SQLite file lives on the
 `gunpla-data` named volume so it survives rebuilds.
 
+This always-on/internal-cron model assumes the host is up 24/7. For a
+machine that isn't (e.g. a home PC), see [`windows/README.md`](windows/README.md)
+for a login-triggered alternative instead.
+
 `report` sends a "No changes today." message when there's something new to
 report but nothing in it actually changed; it sends nothing at all when
 there's nothing new to report (e.g. run it twice in a row). If `collect`
