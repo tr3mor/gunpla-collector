@@ -32,6 +32,10 @@ construction and response-shape structs.
   nothing new and sends nothing. If the most recent `collect` run failed
   (or crashed without recording a failure), it sends a warning instead,
   every time `report` runs, until a `collect` succeeds again.
+  Price changes are filtered before reporting: a set currently out of stock
+  is dropped (its price isn't something anyone can act on), and moves under
+  5% are dropped as noise (some shops show small run-to-run swings that
+  look like currency-conversion rounding rather than a real price change).
 - Both default to running against every active shop in the database when
   `--shop` is omitted and `GUNPLA_SHOPS` is unset — restricted to shops
   that still have a scraper registered in this binary, so retiring a shop

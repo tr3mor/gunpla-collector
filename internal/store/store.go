@@ -60,6 +60,11 @@ type PriceChange struct {
 	OldCents int
 	NewCents int
 	Currency string
+	// InStock is the set's stock status as of the newer run — nil if the
+	// shop's scraper doesn't report stock. A price drop on a set that's
+	// currently out of stock isn't a discount anyone can act on, so callers
+	// use this to filter those out rather than reporting them.
+	InStock *bool
 }
 
 func Open(path string) (*Store, error) {
@@ -378,10 +383,11 @@ func (s *Store) RemovedSets(ctx context.Context, shopID, currentRunID, previousR
 	return scanReportItems(rows)
 }
 
-// PriceChanges returns sets present in both runs whose price differs.
+// PriceChanges returns sets present in both runs whose price differs, along
+// with each set's stock status as of currentRunID.
 func (s *Store) PriceChanges(ctx context.Context, shopID, currentRunID, previousRunID int64) ([]PriceChange, error) {
 	rows, err := s.conn.QueryContext(ctx,
-		`SELECT s.name, COALESCE(s.grade, ''), phOld.price_cents, phNew.price_cents, phNew.currency
+		`SELECT s.name, COALESCE(s.grade, ''), phOld.price_cents, phNew.price_cents, phNew.currency, phNew.in_stock
 		 FROM sets s
 		 JOIN price_history phOld ON phOld.set_id = s.id AND phOld.run_id = ?
 		 JOIN price_history phNew ON phNew.set_id = s.id AND phNew.run_id = ?
@@ -395,8 +401,12 @@ func (s *Store) PriceChanges(ctx context.Context, shopID, currentRunID, previous
 	var changes []PriceChange
 	for rows.Next() {
 		var c PriceChange
-		if err := rows.Scan(&c.Name, &c.Grade, &c.OldCents, &c.NewCents, &c.Currency); err != nil {
+		var inStock sql.NullBool
+		if err := rows.Scan(&c.Name, &c.Grade, &c.OldCents, &c.NewCents, &c.Currency, &inStock); err != nil {
 			return nil, err
+		}
+		if inStock.Valid {
+			c.InStock = &inStock.Bool
 		}
 		changes = append(changes, c)
 	}

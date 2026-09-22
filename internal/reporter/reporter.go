@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"gunpla-collector/internal/store"
@@ -17,6 +18,13 @@ import (
 // reporter.Run treats it as crashed (rather than still in progress) and
 // alerts on it. Chosen well above the ~30 min collect normally takes.
 const stuckRunThreshold = 2 * time.Hour
+
+// minReportablePricePct is the minimum |percentage change| a price change
+// must clear to be reported. Below this, changes are indistinguishable from
+// currency-conversion rounding noise (shops that price in a foreign
+// currency have been seen swinging ~0.5% run to run with no real price
+// change) rather than an actual discount.
+const minReportablePricePct = 5.0
 
 type Store interface {
 	// LatestRun returns the most recent run regardless of status, so a
@@ -84,8 +92,10 @@ func Run(ctx context.Context, db Store, shop store.Shop, sender telegram.Sender,
 		if err != nil {
 			return fmt.Errorf("query price changes: %w", err)
 		}
-		logger.Info("reporting diff", "shop", shop.Slug, "new", len(newSets), "removed", len(removedSets), "changed", len(changes))
-		msg = FormatDiff(shop.Name, newSets, removedSets, changes)
+		reportableChanges := filterReportableChanges(changes)
+		logger.Info("reporting diff", "shop", shop.Slug, "new", len(newSets), "removed", len(removedSets),
+			"changed", len(reportableChanges), "changed_filtered_out", len(changes)-len(reportableChanges))
+		msg = FormatDiff(shop.Name, newSets, removedSets, reportableChanges)
 	}
 
 	if err := telegram.SendLong(ctx, sender, msg); err != nil {
@@ -97,6 +107,26 @@ func Run(ctx context.Context, db Store, shop store.Shop, sender telegram.Sender,
 		return fmt.Errorf("mark reported: %w", err)
 	}
 	return nil
+}
+
+// filterReportableChanges drops price changes that aren't worth alerting
+// on: sets currently out of stock (not something anyone can actually buy at
+// the new price) and moves under minReportablePricePct (rounding/currency
+// conversion noise rather than a real price change). A change with an old
+// price of 0 has no defined percentage and is always kept, matching
+// FormatDiff's "n/a" handling.
+func filterReportableChanges(changes []store.PriceChange) []store.PriceChange {
+	var out []store.PriceChange
+	for _, c := range changes {
+		if c.InStock != nil && !*c.InStock {
+			continue
+		}
+		if pct, ok := pricePctChange(c.OldCents, c.NewCents); ok && math.Abs(pct) < minReportablePricePct {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 // failureReason reports whether run counts as failed — status "failed"
