@@ -336,6 +336,66 @@ func TestReportQueries(t *testing.T) {
 	}
 }
 
+// PriceChanges must surface the newer run's stock status alongside the
+// price, so callers (reporter) can tell a real discount from a price drop
+// on a set that's no longer purchasable. Sets without stock data at all
+// (scraper doesn't report it) must come back with InStock == nil, not false.
+func TestPriceChanges_InStock(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	shop, err := s.GetOrCreateShop(ctx, "test-shop", "Test Shop", "https://example.com")
+	if err != nil {
+		t.Fatalf("GetOrCreateShop: %v", err)
+	}
+
+	applyRun := func(startedAt, appliedAt string, sets []scraper.ScrapedSet) int64 {
+		t.Helper()
+		runID, err := s.StartRun(ctx, shop.ID, startedAt)
+		if err != nil {
+			t.Fatalf("StartRun: %v", err)
+		}
+		if err := s.ApplyRun(ctx, shop.ID, runID, sets, appliedAt); err != nil {
+			t.Fatalf("ApplyRun: %v", err)
+		}
+		return runID
+	}
+
+	inStock, outOfStock := true, false
+	run1 := applyRun("2026-01-01T00:00:00Z", "2026-01-01T00:01:00Z", []scraper.ScrapedSet{
+		{ExternalID: "ext-in", URL: "u1", Name: "Kit In Stock", Grade: "MG", PriceCents: 1000, Currency: "EUR", InStock: &inStock},
+		{ExternalID: "ext-out", URL: "u2", Name: "Kit Out Of Stock", Grade: "MG", PriceCents: 1000, Currency: "EUR", InStock: &outOfStock},
+		{ExternalID: "ext-unknown", URL: "u3", Name: "Kit No Stock Data", Grade: "MG", PriceCents: 1000, Currency: "EUR"},
+	})
+	run2 := applyRun("2026-01-02T00:00:00Z", "2026-01-02T00:01:00Z", []scraper.ScrapedSet{
+		{ExternalID: "ext-in", URL: "u1", Name: "Kit In Stock", Grade: "MG", PriceCents: 1500, Currency: "EUR", InStock: &inStock},
+		{ExternalID: "ext-out", URL: "u2", Name: "Kit Out Of Stock", Grade: "MG", PriceCents: 1500, Currency: "EUR", InStock: &outOfStock},
+		{ExternalID: "ext-unknown", URL: "u3", Name: "Kit No Stock Data", Grade: "MG", PriceCents: 1500, Currency: "EUR"},
+	})
+
+	changes, err := s.PriceChanges(ctx, shop.ID, run2, run1)
+	if err != nil {
+		t.Fatalf("PriceChanges: %v", err)
+	}
+	if len(changes) != 3 {
+		t.Fatalf("PriceChanges = %+v, want 3 rows (filtering happens in reporter, not here)", changes)
+	}
+	byName := map[string]PriceChange{}
+	for _, c := range changes {
+		byName[c.Name] = c
+	}
+
+	if c := byName["Kit In Stock"]; c.InStock == nil || !*c.InStock {
+		t.Errorf("Kit In Stock: InStock = %v, want true", c.InStock)
+	}
+	if c := byName["Kit Out Of Stock"]; c.InStock == nil || *c.InStock {
+		t.Errorf("Kit Out Of Stock: InStock = %v, want false", c.InStock)
+	}
+	if c := byName["Kit No Stock Data"]; c.InStock != nil {
+		t.Errorf("Kit No Stock Data: InStock = %v, want nil (no stock data collected)", c.InStock)
+	}
+}
+
 // Two Store instances on the same file (simulating overlapping processes,
 // e.g. an overrunning cron job): a read on one must succeed while the
 // other holds an open write transaction — what WAL mode buys us.

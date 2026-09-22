@@ -87,8 +87,7 @@ func FormatDiff(shopName string, newSets, removedSets []store.ReportItem, change
 		b.WriteString("\n💰 <b>Price changes</b>\n")
 		for _, c := range changes {
 			pctStr := "n/a"
-			if c.OldCents != 0 {
-				pct := float64(c.NewCents-c.OldCents) / float64(c.OldCents) * 100
+			if pct, ok := pricePctChange(c.OldCents, c.NewCents); ok {
 				sign := ""
 				if pct > 0 {
 					sign = "+"
@@ -100,4 +99,13 @@ func FormatDiff(shopName string, newSets, removedSets []store.ReportItem, change
 	}
 
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// pricePctChange returns the percentage change from oldCents to newCents.
+// ok is false when oldCents is zero, since the percentage is undefined then.
+func pricePctChange(oldCents, newCents int) (pct float64, ok bool) {
+	if oldCents == 0 {
+		return 0, false
+	}
+	return float64(newCents-oldCents) / float64(oldCents) * 100, true
 }
