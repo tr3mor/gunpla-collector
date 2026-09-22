@@ -6,7 +6,12 @@
 # Expects to live in a `windows\` subfolder next to docker-compose.yml
 # and .env (repo root) -- it cd's up one level before running compose.
 
-$ErrorActionPreference = "Stop"
+# Not "Stop": docker/docker compose write routine progress info to
+# stderr, and PowerShell treats a native command's stderr output as a
+# terminating error under $ErrorActionPreference = "Stop" once it's
+# captured by a redirect like *>>. Failures are instead checked via
+# $LASTEXITCODE below.
+$ErrorActionPreference = "Continue"
 Set-Location -Path (Join-Path $PSScriptRoot "..")
 
 $logDir = Join-Path $PSScriptRoot "logs"
