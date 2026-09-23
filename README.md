@@ -8,13 +8,21 @@ Currently supports:
   PG grades, prices in EUR)
 - [Gundam Store](https://gundam-store.com/collections/mg-master-grade) (MG,
   HG, RG, PG grades, prices in USD)
+- [PlamoDX](https://plamodx.nl/product-category/gunpla/) (MG, HG, RG, PG
+  grades, prices in EUR)
 
 More shops can be added by implementing the `scraper.Scraper` interface —
-see `internal/scraper/geeksheaven.go` (Lightspeed eCom JSON API) or
-`internal/scraper/gundamstore.go` (Shopify `products.json` API) as
-templates. Both embed the shared rate-limited, size-capped JSON client in
+see `internal/scraper/geeksheaven.go` (Lightspeed eCom JSON API),
+`internal/scraper/gundamstore.go` (Shopify `products.json` API), or
+`internal/scraper/plamodx.go` (WooCommerce Store REST API) as templates.
+All three embed the shared rate-limited, size-capped JSON client in
 `internal/scraper/http.go`, so a new scraper only needs its own URL
 construction and response-shape structs.
+
+`tf-robots.nl` was evaluated and skipped: the entire site sits behind a
+Cloudflare managed JS challenge (every path but its category-only RSS feed
+returns a "Just a moment..." 403), which the plain HTTP client this project
+uses can't get past.
 
 ## How it works
 
@@ -47,8 +55,10 @@ construction and response-shape structs.
 GeeksHeaven runs on Lightspeed eCom (Shoplightspeed), whose storefront
 supports a `?format=json` API on every category page. Gundam Store runs on
 Shopify, whose storefront exposes the same collection-page data as JSON via
-`/collections/<handle>/products.json`. Both scrapers read that JSON
-directly instead of parsing HTML or driving a headless browser.
+`/collections/<handle>/products.json`. PlamoDX runs on WooCommerce, whose
+public Store REST API (`/wp-json/wc/store/v1/products`) needs no
+authentication. All three scrapers read that JSON directly instead of
+parsing HTML or driving a headless browser.
 
 ## Telegram bot setup
 
@@ -70,7 +80,7 @@ Environment variables:
 | `GUNPLA_DB_PATH`               | `/data/gunpla.db`  | SQLite file path — must be on a mounted volume in Docker |
 | `GUNPLA_TELEGRAM_BOT_TOKEN`    | —                   | required for `report`                                    |
 | `GUNPLA_TELEGRAM_CHAT_ID`      | —                   | required for `report`                                    |
-| `GUNPLA_SHOPS`                 | (all active shops) | comma-separated slugs, e.g. `geeksheaven,gundamstore`     |
+| `GUNPLA_SHOPS`                 | (all active shops) | comma-separated slugs, e.g. `geeksheaven,gundamstore,plamodx` |
 | `GUNPLA_RUN_TIMEOUT`           | `30m` (collect) / `5m` (report) | whole-run timeout, Go duration string e.g. `45m` |
 | `GUNPLA_FORCE`                 | unset (false)       | collect only: equivalent to `--force`, for use from `docker compose exec` |
 
@@ -133,10 +143,11 @@ docker compose exec gunpla-collector gunpla-collector report --shop=geeksheaven
 go test ./...
 ```
 
-Covers price parsing (string and float→cents), the GeeksHeaven and Gundam
-Store JSON API pagination/grade-filtering logic (against a local `httptest`
-server, no network), the new/removed/price-change diff logic and Telegram
-message formatting including per-shop currency symbols (synthetic data),
+Covers price parsing (string and float→cents), the GeeksHeaven, Gundam
+Store, and PlamoDX JSON API pagination/grade-filtering logic (against a
+local `httptest` server, no network), the new/removed/price-change diff
+logic and Telegram message formatting including per-shop currency symbols
+(synthetic data),
 the sanity guard that stops a broken scrape from being interpreted as mass
 removal, the report idempotency logic (unreported-run tracking, skipping
 already-reported runs, alerting on a failed or stuck collect run), and —

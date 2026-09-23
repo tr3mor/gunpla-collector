@@ -59,3 +59,23 @@ func centsFromPriceString(s string) (int, error) {
 	}
 	return CentsFromDecimal(f), nil
 }
+
+// centsFromMinorUnitString parses a price already expressed as an integer
+// string of minor units (e.g. WooCommerce Store API's prices.price, "3599"
+// for €35.99 when currency_minor_unit is 2) directly into integer cents.
+// Unlike centsFromPriceString, there's no decimal point to parse. Assumes
+// minorUnit is 2 (true for every currency this project currently tracks);
+// callers should check that themselves if it might not be.
+func centsFromMinorUnitString(s string, minorUnit int) (int, error) {
+	if minorUnit != 2 {
+		return 0, fmt.Errorf("unsupported currency_minor_unit %d for price %q", minorUnit, s)
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		return 0, fmt.Errorf("parse price %q: %w", s, err)
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("negative price %q", s)
+	}
+	return n, nil
+}
