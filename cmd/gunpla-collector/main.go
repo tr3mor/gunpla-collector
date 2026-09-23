@@ -43,6 +43,7 @@ const usageText = `usage: gunpla-collector <collect|report> [-shop=<slug>] [-for
 func init() {
 	scraper.Register(scraper.NewGeeksHeaven())
 	scraper.Register(scraper.NewGundamStore())
+	scraper.Register(scraper.NewPlamoDX())
 }
 
 func main() {
