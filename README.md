@@ -1,7 +1,8 @@
 # gunpla-collector
 
-Tracks Gunpla model kit inventory and prices at online shops over time, and
-sends a daily Telegram summary of what's new, removed, or changed price.
+Tracks Gunpla model kit inventory and prices at online shops over time,
+sends a daily Telegram summary of what's new, removed, or changed price,
+and serves a small web UI for searching the current catalog.
 
 Currently supports:
 - [GeeksHeaven](https://www.geeksheaven.nl/gundam-model-kits/) (MG, HG, RG,
@@ -44,7 +45,14 @@ uses can't get past.
   is dropped (its price isn't something anyone can act on), and moves under
   5% are dropped as noise (some shops show small run-to-run swings that
   look like currency-conversion rounding rather than a real price change).
-- Both default to running against every active shop in the database when
+- `gunpla-collector serve [--addr=:8080]` serves a search UI over the same
+  database: a text search (case-insensitive substring) plus an optional
+  regexp filter on set name, and a shop filter. Each result shows the
+  set's current price, the lowest price ever recorded for it, and a link
+  to the listing. It's read-only and has no authentication — run it on a
+  trusted network only. `--addr` defaults to `$GUNPLA_UI_ADDR`, or
+  `:8080` if that's unset too.
+- Both `collect` and `report` default to running against every active shop in the database when
   `--shop` is omitted and `GUNPLA_SHOPS` is unset — restricted to shops
   that still have a scraper registered in this binary, so retiring a shop
   from the code stops it from being collected/reported without also
@@ -83,6 +91,7 @@ Environment variables:
 | `GUNPLA_SHOPS`                 | (all active shops) | comma-separated slugs, e.g. `geeksheaven,gundamstore,plamodx` |
 | `GUNPLA_RUN_TIMEOUT`           | `30m` (collect) / `5m` (report) | whole-run timeout, Go duration string e.g. `45m` |
 | `GUNPLA_FORCE`                 | unset (false)       | collect only: equivalent to `--force`, for use from `docker compose exec` |
+| `GUNPLA_UI_ADDR`               | `:8080`             | serve only: address to listen on                          |
 
 ## Running locally
 
@@ -94,6 +103,9 @@ GUNPLA_DB_PATH=./gunpla.db \
 GUNPLA_TELEGRAM_BOT_TOKEN=... \
 GUNPLA_TELEGRAM_CHAT_ID=... \
 ./gunpla-collector report --shop=geeksheaven
+
+GUNPLA_DB_PATH=./gunpla.db ./gunpla-collector serve --addr=:8080
+# then open http://localhost:8080
 ```
 
 Inspect the database directly:
@@ -115,7 +127,14 @@ instead of always tracking `latest`; see [Releases](https://github.com/tr3mor/gu
 for available versions. To build from source instead of pulling, run
 `docker compose build` first, or add `build: .` back to `docker-compose.yml`.
 
-Cron runs *inside* the container (busybox `crond` as PID 1, see
+This also starts a `gunpla-ui` container serving the search UI at
+`http://localhost:8080` (change the published port with `GUNPLA_UI_PORT` in
+`.env`). It's a separate container from the cron job so it can be
+restarted independently, reads the same SQLite file over the shared
+`gunpla-data` volume, and has no authentication — it's meant for a
+trusted network (LAN/VPN), not the open internet.
+
+Cron runs *inside* the `gunpla-collector` container (busybox `crond` as PID 1, see
 `crontab` and `docker-entrypoint.sh`): `collect` at 18:00, `report` at
 18:15, daily, both in Europe/Amsterdam local time (baked into the image, so
 it stays correct across the CET/CEST switch). The SQLite file lives on the
@@ -152,7 +171,9 @@ the sanity guard that stops a broken scrape from being interpreted as mass
 removal, the report idempotency logic (unreported-run tracking, skipping
 already-reported runs, alerting on a failed or stuck collect run), and —
 against a real temporary SQLite file — the atomic collect-run transaction
-(`store.ApplyRun`), foreign-key enforcement, and schema migrations.
+(`store.ApplyRun`), foreign-key enforcement, and schema migrations. Also
+covers the search UI's JSON API (substring/regexp/shop filtering, current
+vs. lowest price selection, invalid-regexp handling).
 
 CI (`.github/workflows/ci.yml`) runs `go vet`, `go test -race`, and
 [golangci-lint](https://golangci-lint.run/) (config in `.golangci.yml`) on

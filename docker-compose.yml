@@ -12,5 +12,25 @@ services:
     volumes:
       - gunpla-data:/data
 
+  # Search UI, separate from the cron container so it can be started,
+  # stopped, or restarted independently. Reads the same SQLite file over
+  # the shared volume (SQLite's WAL mode allows concurrent readers while
+  # gunpla-collector holds a write transaction). No auth — bind it to a
+  # trusted network (LAN/VPN), not the public internet.
+  gunpla-ui:
+    image: ghcr.io/tr3mor/gunpla-collector:${GUNPLA_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    # Bypass docker-entrypoint.sh (which always execs crond) and run the
+    # binary directly — this container has no cron jobs of its own.
+    entrypoint: ["/usr/local/bin/gunpla-collector"]
+    command: ["serve"]
+    environment:
+      GUNPLA_DB_PATH: /data/gunpla.db
+      GUNPLA_UI_ADDR: ":8080"
+    ports:
+      - "${GUNPLA_UI_PORT:-8080}:8080"
+    volumes:
+      - gunpla-data:/data
+
 volumes:
   gunpla-data:

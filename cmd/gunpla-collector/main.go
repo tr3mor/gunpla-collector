@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -21,6 +22,7 @@ import (
 	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
 	"gunpla-collector/internal/telegram"
+	"gunpla-collector/internal/web"
 )
 
 // Default whole-run timeouts when GUNPLA_RUN_TIMEOUT isn't set — a
@@ -31,14 +33,17 @@ const (
 	defaultReportTimeout  = 5 * time.Minute
 )
 
-const usageText = `usage: gunpla-collector <collect|report> [-shop=<slug>] [-force]
+const usageText = `usage: gunpla-collector <collect|report|serve> [-shop=<slug>] [-force] [-addr=<addr>]
 
   -shop string
         shop slug to run against (default: all active shops, or $GUNPLA_SHOPS)
   -force
         collect only: skip the sanity guard that refuses a run returning
         less than half the previous run's set count (also settable via
-        $GUNPLA_FORCE=1)`
+        $GUNPLA_FORCE=1)
+  -addr string
+        serve only: address to listen on, e.g. ":8080" (default: $GUNPLA_UI_ADDR
+        or ":8080")`
 
 func init() {
 	scraper.Register(scraper.NewGeeksHeaven())
@@ -58,7 +63,7 @@ func run(args []string) error {
 		return usageError()
 	}
 	cmd := args[0]
-	if cmd != "collect" && cmd != "report" {
+	if cmd != "collect" && cmd != "report" && cmd != "serve" {
 		return usageError()
 	}
 
@@ -86,6 +91,10 @@ func run(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if cmd == "serve" {
+		return serve(ctx, db, logger, addrFlag(flags.addr, cfg.UIAddr))
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, runTimeout(cmd, cfg.RunTimeout))
 	defer cancel()
@@ -211,6 +220,7 @@ func usageError() error {
 type parsedFlags struct {
 	shop  string
 	force bool
+	addr  string
 }
 
 // parseFlags parses everything after the subcommand. An error wrapping
@@ -225,8 +235,50 @@ func parseFlags(cmd string, args []string) (parsedFlags, error) {
 	fs.SetOutput(io.Discard) // run() formats errors/usage itself
 	shopFlag := fs.String("shop", "", "shop slug to run against (default: all active shops)")
 	forceFlag := fs.Bool("force", false, "collect only: skip the sanity guard")
+	addrFlagVal := fs.String("addr", "", "serve only: address to listen on")
 	if err := fs.Parse(args); err != nil {
 		return parsedFlags{}, err
 	}
-	return parsedFlags{shop: *shopFlag, force: *forceFlag}, nil
+	return parsedFlags{shop: *shopFlag, force: *forceFlag, addr: *addrFlagVal}, nil
+}
+
+// addrFlag picks the address `serve` listens on: the -addr flag if given,
+// otherwise the configured default.
+func addrFlag(flagVal, cfgDefault string) string {
+	if flagVal != "" {
+		return flagVal
+	}
+	return cfgDefault
+}
+
+// serve runs the search UI's HTTP server until ctx is cancelled (SIGINT/SIGTERM),
+// then shuts it down gracefully. Unlike collect/report, it has no run-timeout —
+// it's meant to stay up.
+func serve(ctx context.Context, db *store.Store, logger *slog.Logger, addr string) error {
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: web.NewServer(db, logger).Handler(),
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		logger.Info("serving UI", "addr", addr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+			return
+		}
+		errCh <- nil
+	}()
+
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("shut down server: %w", err)
+		}
+		return <-errCh
+	case err := <-errCh:
+		return err
+	}
 }
