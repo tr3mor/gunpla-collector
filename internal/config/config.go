@@ -20,6 +20,8 @@ type Config struct {
 	// Force is the env-var equivalent of collect's -force flag, for
 	// overriding the sanity guard from `docker compose exec`.
 	Force bool
+	// UIAddr is the address `serve` listens on, e.g. ":8080".
+	UIAddr string
 }
 
 func Load() Config {
@@ -30,6 +32,7 @@ func Load() Config {
 		Shops:          parseShops(os.Getenv("GUNPLA_SHOPS")),
 		RunTimeout:     parseRunTimeout(os.Getenv("GUNPLA_RUN_TIMEOUT")),
 		Force:          parseBool(os.Getenv("GUNPLA_FORCE")),
+		UIAddr:         getEnv("GUNPLA_UI_ADDR", ":8080"),
 	}
 }
 

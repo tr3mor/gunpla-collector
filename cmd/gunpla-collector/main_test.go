@@ -87,6 +87,25 @@ func TestParseFlags_DefaultsAreZeroValues(t *testing.T) {
 	}
 }
 
+func TestParseFlags_Addr(t *testing.T) {
+	flags, err := parseFlags("serve", []string{"--addr=:9090"})
+	if err != nil {
+		t.Fatalf("parseFlags: %v", err)
+	}
+	if flags.addr != ":9090" {
+		t.Errorf("addr = %q, want :9090", flags.addr)
+	}
+}
+
+func TestAddrFlag(t *testing.T) {
+	if got := addrFlag("", ":8080"); got != ":8080" {
+		t.Errorf("addrFlag(\"\", \":8080\") = %q, want :8080 (falls back to config default)", got)
+	}
+	if got := addrFlag(":9090", ":8080"); got != ":9090" {
+		t.Errorf("addrFlag(\":9090\", \":8080\") = %q, want :9090 (flag wins)", got)
+	}
+}
+
 func TestParseFlags_HelpReturnsErrHelp(t *testing.T) {
 	_, err := parseFlags("collect", []string{"-h"})
 	if !errors.Is(err, flag.ErrHelp) {

@@ -40,3 +40,38 @@ Scheduler's own history for the `gunpla-collector` task, or just wait for
 the Telegram message.
 
 To remove the task later: `Unregister-ScheduledTask -TaskName "gunpla-collector"`.
+
+## Search UI
+
+`run-on-login.ps1` only handles `collect`/`report` — one-shot jobs that
+exit as soon as they're done (`docker compose run --rm`). The search UI
+(`gunpla-ui`, see the main README) needs to keep running instead, so it's
+started separately with `windows\start-ui.ps1`, which brings up just that
+one container in detached mode (`docker compose up -d gunpla-ui`) and is
+safe to run again if it's already up.
+
+Run it manually whenever you want the UI available:
+
+```powershell
+cd C:\gunpla-collector
+.\windows\start-ui.ps1
+```
+
+Then open `http://localhost:8080` (or whatever `GUNPLA_UI_PORT` is set to
+in `.env`). To stop it: `.\windows\stop-ui.ps1`.
+
+To have it come back automatically after a reboot, register a second
+login task the same way as above, pointing at `start-ui.ps1`:
+
+```powershell
+$action = New-ScheduledTaskAction -Execute "powershell.exe" `
+    -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\gunpla-collector\windows\start-ui.ps1"'
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
+$settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -StartWhenAvailable
+Register-ScheduledTask -TaskName "gunpla-ui" -Action $action -Trigger $trigger `
+    -Settings $settings -Description "Starts the gunpla-collector search UI on login"
+```
+
+Since the UI container has no authentication, this is meant for a
+trusted home network — don't port-forward `GUNPLA_UI_PORT` to the
+internet.

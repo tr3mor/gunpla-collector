@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gunpla Collector</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f7f8;
+    --panel: #ffffff;
+    --text: #1a1a1a;
+    --muted: #6b6b6b;
+    --border: #e2e2e4;
+    --accent: #2f6fed;
+    --danger: #c23c3c;
+    --good: #1a7f37;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16171a;
+      --panel: #1f2024;
+      --text: #eaeaea;
+      --muted: #9a9a9e;
+      --border: #313236;
+      --accent: #6d9bff;
+      --danger: #ff6b6b;
+      --good: #4fd17a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    padding: 20px 16px 8px;
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 20px; margin: 0 0 12px; }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 0 16px 16px;
+  }
+  .controls input, .controls select {
+    flex: 1 1 180px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--panel);
+    color: var(--text);
+    font-size: 14px;
+  }
+  .controls input:invalid { border-color: var(--danger); }
+  .controls label.checkbox {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .controls label.checkbox input { flex: none; width: auto; }
+  main { max-width: 1000px; margin: 0 auto; padding: 0 16px 40px; }
+  #status { color: var(--muted); font-size: 13px; margin-bottom: 10px; min-height: 1.2em; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+  tr:last-child td { border-bottom: none; }
+  a.name { color: var(--text); text-decoration: none; font-weight: 500; }
+  a.name:hover { color: var(--accent); text-decoration: underline; }
+  .shop { color: var(--muted); font-size: 12px; }
+  .price-current { font-variant-numeric: tabular-nums; }
+  .price-lowest { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .price-current.at-low { color: var(--good); font-weight: 600; }
+  .out-of-stock { color: var(--danger); font-size: 12px; }
+  @media (max-width: 640px) {
+    table, thead, tbody, th, td, tr { display: block; }
+    thead { display: none; }
+    tr { border-bottom: 1px solid var(--border); padding: 10px 12px; }
+    td { border: none; padding: 2px 0; }
+    td::before { content: attr(data-label); color: var(--muted); font-size: 11px; display: block; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Gunpla Collector</h1>
+</header>
+<div class="controls">
+  <input id="q" type="search" placeholder="Search by name…" autocomplete="off">
+  <input id="regexp" type="text" placeholder="Regexp filter (optional)" autocomplete="off">
+  <select id="shop"><option value="">All shops</option></select>
+  <label class="checkbox"><input id="hideOOS" type="checkbox" checked> Hide out of stock</label>
+</div>
+<main>
+  <div id="status"></div>
+  <table>
+    <thead>
+      <tr><th>Set</th><th>Shop</th><th>Current price</th><th>Lowest recorded</th></tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+</main>
+<script>
+(function () {
+  var qInput = document.getElementById('q');
+  var reInput = document.getElementById('regexp');
+  var shopSelect = document.getElementById('shop');
+  var hideOOSCheckbox = document.getElementById('hideOOS');
+  var statusEl = document.getElementById('status');
+  var rowsEl = document.getElementById('rows');
+  var debounceTimer = null;
+  var currentRequest = 0;
+
+  var symbols = { EUR: '€', USD: '$', GBP: '£' };
+  function formatPrice(cents, currency) {
+    var symbol = symbols[currency] || (currency + ' ');
+    return symbol + (cents / 100).toFixed(2);
+  }
+
+  function escapeHTML(s) {
+    return s.replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function loadShops() {
+    fetch('/api/shops').then(function (r) { return r.json(); }).then(function (shops) {
+      shops.forEach(function (s) {
+        var opt = document.createElement('option');
+        opt.value = s.slug;
+        opt.textContent = s.name;
+        shopSelect.appendChild(opt);
+      });
+    }).catch(function () { /* shop list is a convenience, search still works without it */ });
+  }
+
+  function render(rows) {
+    if (rows.length === 0) {
+      rowsEl.innerHTML = '';
+      statusEl.textContent = 'No sets match.';
+      return;
+    }
+    statusEl.textContent = rows.length + ' set' + (rows.length === 1 ? '' : 's');
+    rowsEl.innerHTML = rows.map(function (row) {
+      var atLow = row.current_price_cents <= row.lowest_price_cents;
+      var outOfStock = row.current_in_stock === false;
+      return '<tr>' +
+        '<td data-label="Set"><a class="name" href="' + row.url.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener">' + escapeHTML(row.name) + (row.grade ? ' <span class="shop">(' + escapeHTML(row.grade) + ')</span>' : '') + '</a>' +
+          (outOfStock ? '<br><span class="out-of-stock">Out of stock</span>' : '') + '</td>' +
+        '<td data-label="Shop">' + escapeHTML(row.shop_name) + '</td>' +
+        '<td data-label="Current price"><span class="price-current' + (atLow ? ' at-low' : '') + '">' + formatPrice(row.current_price_cents, row.currency) + '</span></td>' +
+        '<td data-label="Lowest recorded"><span class="price-lowest">' + formatPrice(row.lowest_price_cents, row.currency) + '</span></td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  function search() {
+    var params = new URLSearchParams();
+    if (qInput.value.trim()) params.set('q', qInput.value.trim());
+    if (reInput.value.trim()) params.set('regexp', reInput.value.trim());
+    if (shopSelect.value) params.set('shop', shopSelect.value);
+    if (!hideOOSCheckbox.checked) params.set('show_out_of_stock', '1');
+
+    var requestID = ++currentRequest;
+    statusEl.textContent = 'Searching…';
+    reInput.setCustomValidity('');
+
+    fetch('/api/search?' + params.toString()).then(function (r) {
+      return r.json().then(function (body) { return { ok: r.ok, body: body }; });
+    }).then(function (result) {
+      if (requestID !== currentRequest) return; // a newer request superseded this one
+      if (!result.ok) {
+        statusEl.textContent = 'Error: ' + (result.body.error || 'search failed');
+        reInput.setCustomValidity(result.body.error || 'invalid');
+        rowsEl.innerHTML = '';
+        return;
+      }
+      render(result.body);
+    }).catch(function (err) {
+      if (requestID !== currentRequest) return;
+      statusEl.textContent = 'Error: ' + err.message;
+    });
+  }
+
+  function debouncedSearch() {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(search, 200);
+  }
+
+  qInput.addEventListener('input', debouncedSearch);
+  reInput.addEventListener('input', debouncedSearch);
+  shopSelect.addEventListener('change', search);
+  hideOOSCheckbox.addEventListener('change', search);
+
+  loadShops();
+  search();
+})();
+</script>
+</body>
+</html>
