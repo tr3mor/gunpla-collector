@@ -45,8 +45,10 @@ type GundamStore struct {
 func NewGundamStore() *GundamStore {
 	return &GundamStore{
 		fetcher: httpFetcher{
-			httpClient: &http.Client{Timeout: 20 * time.Second},
-			userAgent:  defaultUserAgent,
+			httpClient:   &http.Client{Timeout: 20 * time.Second},
+			userAgent:    defaultUserAgent,
+			retries:      defaultRetries,
+			retryBackoff: defaultRetryBackoff,
 			// robots.txt specifies no Crawl-delay for this store, so this
 			// is a conservative self-imposed choice rather than one
 			// derived from site policy.

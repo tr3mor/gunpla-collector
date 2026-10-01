@@ -81,3 +81,64 @@ func TestSleepCtx_ReturnsEarlyOnCancellation(t *testing.T) {
 		t.Errorf("sleepCtx took %v to return, want well under its 1s delay", elapsed)
 	}
 }
+
+func retryFetcher(srv *httptest.Server, retries int) *httpFetcher {
+	return &httpFetcher{httpClient: srv.Client(), userAgent: "test", retries: retries, retryBackoff: time.Millisecond}
+}
+
+// A response cut off mid-body ("unexpected EOF", as seen from plamodx.nl)
+// must be retried and succeed once the server behaves.
+func TestHTTPFetcher_Get_RetriesTruncatedBody(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			w.Header().Set("Content-Length", "10")
+			w.Write([]byte("abc")) // promise 10 bytes, send 3, then drop the connection
+			return
+		}
+		w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	body, err := retryFetcher(srv, 2).get(context.Background(), srv.URL)
+	if err != nil || string(body) != "ok" {
+		t.Fatalf("get = %q, %v; want ok after retry", body, err)
+	}
+	if calls != 2 {
+		t.Errorf("calls = %d, want 2", calls)
+	}
+}
+
+func TestHTTPFetcher_Get_RetriesServerErrorThenGivesUp(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	if _, err := retryFetcher(srv, 2).get(context.Background(), srv.URL); err == nil {
+		t.Fatal("expected error after exhausting retries")
+	}
+	if calls != 3 {
+		t.Errorf("calls = %d, want 3 (1 attempt + 2 retries)", calls)
+	}
+}
+
+// Permanent failures must not be retried.
+func TestHTTPFetcher_Get_DoesNotRetryClientError(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	if _, err := retryFetcher(srv, 3).get(context.Background(), srv.URL); err == nil {
+		t.Fatal("expected error for 404")
+	}
+	if calls != 1 {
+		t.Errorf("calls = %d, want 1", calls)
+	}
+}
