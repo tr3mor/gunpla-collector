@@ -108,7 +108,7 @@ func TestGeeksHeaven_FetchAll(t *testing.T) {
 	if one.EAN != "e101" || one.SKU != "s101" {
 		t.Errorf("set 101 EAN/SKU = %q/%q, want e101/s101", one.EAN, one.SKU)
 	}
-	if one.InStock == nil || !*one.InStock {
+	if one.Availability != AvailabilityInStock {
 		t.Errorf("set 101 expected in stock")
 	}
 	if one.URL != srv.URL+"/mg-one.html" {
@@ -116,7 +116,7 @@ func TestGeeksHeaven_FetchAll(t *testing.T) {
 	}
 
 	two := byID["102"]
-	if two.InStock == nil || *two.InStock {
+	if two.Availability != AvailabilityOutOfStock {
 		t.Errorf("set 102 expected out of stock")
 	}
 

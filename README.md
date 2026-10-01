@@ -11,8 +11,8 @@ Currently supports:
   HG, RG, PG grades, prices in USD)
 - [PlamoDX](https://plamodx.nl/product-category/gunpla/) (MG, HG, RG, PG
   grades, prices in EUR)
-- [Zeonmarket](https://www.zeonmarket.nl/MG) (MG, HG, RG, PG grades, prices
-  in EUR)
+- [Zeonmarket](https://www.zeonmarket.nl/MG) (MG, HG, RG, PG grades plus
+  its [pre-order list](https://www.zeonmarket.nl/Pre-orders), prices in EUR)
 
 More shops can be added by implementing the `scraper.Scraper` interface —
 see `internal/scraper/geeksheaven.go` (Lightspeed eCom JSON API),
@@ -72,6 +72,10 @@ authentication. Those three scrapers read JSON directly. Zeonmarket runs
 on CCV Shop, which has no JSON API, so its scraper parses the
 server-rendered category pages (`/MG?page=N`, 12 products per page, until
 an empty page); no headless browser is needed for any shop.
+
+Each price record carries an availability (`in_stock`, `out_of_stock`,
+`preorder`, or unknown). Newly opened pre-orders are reported in their own
+"Pre-orders opened" section of the daily Telegram report.
 
 ## Telegram bot setup
 

@@ -5,6 +5,7 @@ import (
 	"html"
 	"strings"
 
+	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
 )
 
@@ -69,12 +70,27 @@ func FormatDiff(shopName string, newSets, removedSets []store.ReportItem, change
 		return b.String()
 	}
 
-	if len(newSets) > 0 {
-		b.WriteString("\n🆕 <b>New</b>\n")
-		for _, s := range newSets {
+	// Pre-orders get their own section so an opening isn't lost among
+	// regular arrivals.
+	var preorders, arrivals []store.ReportItem
+	for _, s := range newSets {
+		if s.Availability == scraper.AvailabilityPreorder {
+			preorders = append(preorders, s)
+		} else {
+			arrivals = append(arrivals, s)
+		}
+	}
+	writeItems := func(heading string, items []store.ReportItem) {
+		if len(items) == 0 {
+			return
+		}
+		b.WriteString(heading)
+		for _, s := range items {
 			fmt.Fprintf(&b, "• %s — %s\n", esc(s.Name), formatPrice(s.PriceCents, s.Currency))
 		}
 	}
+	writeItems("\n🆕 <b>New</b>\n", arrivals)
+	writeItems("\n🛒 <b>Pre-orders opened</b>\n", preorders)
 
 	if len(removedSets) > 0 {
 		b.WriteString("\n❌ <b>Removed</b>\n")

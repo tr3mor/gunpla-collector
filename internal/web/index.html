@@ -153,10 +153,11 @@
     statusEl.textContent = rows.length + ' set' + (rows.length === 1 ? '' : 's');
     rowsEl.innerHTML = rows.map(function (row) {
       var atLow = row.current_price_cents <= row.lowest_price_cents;
-      var outOfStock = row.current_in_stock === false;
+      var outOfStock = row.availability === 'out_of_stock';
+      var preorder = row.availability === 'preorder';
       return '<tr>' +
         '<td data-label="Set"><a class="name" href="' + row.url.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener">' + escapeHTML(row.name) + (row.grade ? ' <span class="shop">(' + escapeHTML(row.grade) + ')</span>' : '') + '</a>' +
-          (outOfStock ? '<br><span class="out-of-stock">Out of stock</span>' : '') + '</td>' +
+          (outOfStock ? '<br><span class="out-of-stock">Out of stock</span>' : '') + (preorder ? '<br><span class="shop">Pre-order</span>' : '') + '</td>' +
         '<td data-label="Shop">' + escapeHTML(row.shop_name) + '</td>' +
         '<td data-label="Current price"><span class="price-current' + (atLow ? ' at-low' : '') + '">' + formatPrice(row.current_price_cents, row.currency) + '</span></td>' +
         '<td data-label="Lowest recorded"><span class="price-lowest">' + formatPrice(row.lowest_price_cents, row.currency) + '</span></td>' +

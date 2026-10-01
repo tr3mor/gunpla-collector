@@ -49,10 +49,10 @@ func TestApplyRun_PersistsSetsPriceHistoryAndFinishesRun(t *testing.T) {
 		t.Fatalf("StartRun: %v", err)
 	}
 
-	inStock := true
+	inStock := scraper.AvailabilityInStock
 	sets := []scraper.ScrapedSet{
-		{ExternalID: "ext-1", URL: "https://example.com/1", Name: "Kit One", Grade: "MG", PriceCents: 5000, Currency: "EUR", InStock: &inStock},
-		{ExternalID: "ext-2", URL: "https://example.com/2", Name: "Kit Two", Grade: "HG", PriceCents: 3000, Currency: "EUR", InStock: &inStock},
+		{ExternalID: "ext-1", URL: "https://example.com/1", Name: "Kit One", Grade: "MG", PriceCents: 5000, Currency: "EUR", Availability: inStock},
+		{ExternalID: "ext-2", URL: "https://example.com/2", Name: "Kit Two", Grade: "HG", PriceCents: 3000, Currency: "EUR", Availability: inStock},
 	}
 	if err := s.ApplyRun(ctx, shop.ID, runID, sets, "2026-01-01T00:01:00Z"); err != nil {
 		t.Fatalf("ApplyRun: %v", err)
@@ -223,10 +223,10 @@ func TestInsertPriceHistory_RejectsDuplicateSetRunPair(t *testing.T) {
 		t.Fatalf("UpsertSet: %v", err)
 	}
 
-	if err := s.InsertPriceHistory(ctx, setID, runID, 5000, "EUR", nil, "2026-01-01T00:01:00Z"); err != nil {
+	if err := s.InsertPriceHistory(ctx, setID, runID, 5000, "EUR", "", "2026-01-01T00:01:00Z"); err != nil {
 		t.Fatalf("InsertPriceHistory (first): %v", err)
 	}
-	if err := s.InsertPriceHistory(ctx, setID, runID, 5000, "EUR", nil, "2026-01-01T00:01:00Z"); err == nil {
+	if err := s.InsertPriceHistory(ctx, setID, runID, 5000, "EUR", "", "2026-01-01T00:01:00Z"); err == nil {
 		t.Fatal("expected error inserting a second price_history row for the same (set_id, run_id), got nil")
 	}
 }
@@ -339,7 +339,7 @@ func TestReportQueries(t *testing.T) {
 // PriceChanges must surface the newer run's stock status alongside the
 // price, so callers (reporter) can tell a real discount from a price drop
 // on a set that's no longer purchasable. Sets without stock data at all
-// (scraper doesn't report it) must come back with InStock == nil, not false.
+// (scraper doesn't report it) must come back with an empty Availability, not out_of_stock.
 func TestPriceChanges_InStock(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
@@ -361,15 +361,15 @@ func TestPriceChanges_InStock(t *testing.T) {
 		return runID
 	}
 
-	inStock, outOfStock := true, false
+	inStock, outOfStock := scraper.AvailabilityInStock, scraper.AvailabilityOutOfStock
 	run1 := applyRun("2026-01-01T00:00:00Z", "2026-01-01T00:01:00Z", []scraper.ScrapedSet{
-		{ExternalID: "ext-in", URL: "u1", Name: "Kit In Stock", Grade: "MG", PriceCents: 1000, Currency: "EUR", InStock: &inStock},
-		{ExternalID: "ext-out", URL: "u2", Name: "Kit Out Of Stock", Grade: "MG", PriceCents: 1000, Currency: "EUR", InStock: &outOfStock},
+		{ExternalID: "ext-in", URL: "u1", Name: "Kit In Stock", Grade: "MG", PriceCents: 1000, Currency: "EUR", Availability: inStock},
+		{ExternalID: "ext-out", URL: "u2", Name: "Kit Out Of Stock", Grade: "MG", PriceCents: 1000, Currency: "EUR", Availability: outOfStock},
 		{ExternalID: "ext-unknown", URL: "u3", Name: "Kit No Stock Data", Grade: "MG", PriceCents: 1000, Currency: "EUR"},
 	})
 	run2 := applyRun("2026-01-02T00:00:00Z", "2026-01-02T00:01:00Z", []scraper.ScrapedSet{
-		{ExternalID: "ext-in", URL: "u1", Name: "Kit In Stock", Grade: "MG", PriceCents: 1500, Currency: "EUR", InStock: &inStock},
-		{ExternalID: "ext-out", URL: "u2", Name: "Kit Out Of Stock", Grade: "MG", PriceCents: 1500, Currency: "EUR", InStock: &outOfStock},
+		{ExternalID: "ext-in", URL: "u1", Name: "Kit In Stock", Grade: "MG", PriceCents: 1500, Currency: "EUR", Availability: inStock},
+		{ExternalID: "ext-out", URL: "u2", Name: "Kit Out Of Stock", Grade: "MG", PriceCents: 1500, Currency: "EUR", Availability: outOfStock},
 		{ExternalID: "ext-unknown", URL: "u3", Name: "Kit No Stock Data", Grade: "MG", PriceCents: 1500, Currency: "EUR"},
 	})
 
@@ -385,14 +385,14 @@ func TestPriceChanges_InStock(t *testing.T) {
 		byName[c.Name] = c
 	}
 
-	if c := byName["Kit In Stock"]; c.InStock == nil || !*c.InStock {
-		t.Errorf("Kit In Stock: InStock = %v, want true", c.InStock)
+	if c := byName["Kit In Stock"]; c.Availability != scraper.AvailabilityInStock {
+		t.Errorf("Kit In Stock: Availability = %q, want in_stock", c.Availability)
 	}
-	if c := byName["Kit Out Of Stock"]; c.InStock == nil || *c.InStock {
-		t.Errorf("Kit Out Of Stock: InStock = %v, want false", c.InStock)
+	if c := byName["Kit Out Of Stock"]; c.Availability != scraper.AvailabilityOutOfStock {
+		t.Errorf("Kit Out Of Stock: Availability = %q, want out_of_stock", c.Availability)
 	}
-	if c := byName["Kit No Stock Data"]; c.InStock != nil {
-		t.Errorf("Kit No Stock Data: InStock = %v, want nil (no stock data collected)", c.InStock)
+	if c := byName["Kit No Stock Data"]; c.Availability != scraper.AvailabilityUnknown {
+		t.Errorf("Kit No Stock Data: Availability = %q, want empty (no stock data collected)", c.Availability)
 	}
 }
 

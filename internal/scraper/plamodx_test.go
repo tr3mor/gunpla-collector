@@ -59,7 +59,7 @@ func TestPlamoDX_FetchAll(t *testing.T) {
 	if one.Name != "MG One" || one.Grade != "MG" || one.PriceCents != 9200 || one.Currency != "EUR" {
 		t.Errorf("set 101 = %+v, unexpected fields", one)
 	}
-	if one.InStock == nil || !*one.InStock {
+	if one.Availability != AvailabilityInStock {
 		t.Errorf("set 101 expected in stock")
 	}
 	if one.URL != "https://plamodx.nl/product/mg-one/" {
@@ -70,7 +70,7 @@ func TestPlamoDX_FetchAll(t *testing.T) {
 	}
 
 	two := byID["102"]
-	if two.InStock == nil || *two.InStock {
+	if two.Availability != AvailabilityOutOfStock {
 		t.Errorf("set 102 expected out of stock")
 	}
 	if two.PriceCents != 5499 {

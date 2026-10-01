@@ -21,19 +21,29 @@ const (
 	zeonMarketMaxPages = 100
 )
 
-// zeonMarketGradePaths maps the grade codes we track to the category paths
-// of this CCV Shop storefront. Each category is server-rendered HTML,
-// 12 products per page, paged with ?page=N (the same URL the site's
-// infinite scroll pushes into the address bar).
-var zeonMarketGradePaths = []struct {
-	path  string
-	grade string
+// zeonMarketSources lists the category paths of this CCV Shop storefront
+// to read. Each is server-rendered HTML, 12 products per page, paged with
+// ?page=N (the same URL the site's infinite scroll pushes into the address
+// bar). The grade categories fix the grade; /Pre-orders is a flat list of
+// every kind of kit, so its grade is guessed from the name (or left empty)
+// and each item is marked as a pre-order. It goes last so that if an item
+// ever appears in both, the pre-order status wins.
+var zeonMarketSources = []struct {
+	path     string
+	grade    string
+	preorder bool
 }{
-	{"/MG", "MG"},
-	{"/HG", "HG"},
-	{"/RG", "RG"},
-	{"/PG", "PG"},
+	{"/MG", "MG", false},
+	{"/HG", "HG", false},
+	{"/RG", "RG", false},
+	{"/PG", "PG", false},
+	{"/Pre-orders", "", true},
 }
+
+// zeonPreorderPrefix is the "PRE-ORDER " marker the shop puts at the start
+// of every pre-order title; stripped so the name reads like the released
+// product's.
+var zeonPreorderPrefix = regexp.MustCompile(`(?i)^pre-order\s+`)
 
 var (
 	zeonCardSplit = regexp.MustCompile(`class="product-card product-card`)
@@ -70,7 +80,7 @@ func (z *ZeonMarket) BaseURL() string  { return zeonMarketBaseURL }
 func (z *ZeonMarket) FetchAll(ctx context.Context) ([]ScrapedSet, error) {
 	seen := map[string]ScrapedSet{}
 
-	for _, cat := range zeonMarketGradePaths {
+	for _, cat := range zeonMarketSources {
 		for page := 1; ; page++ {
 			if page > zeonMarketMaxPages {
 				return nil, fmt.Errorf("category %s: still returning products after %d pages — pagination may have changed", cat.path, zeonMarketMaxPages)
@@ -87,7 +97,7 @@ func (z *ZeonMarket) FetchAll(ctx context.Context) ([]ScrapedSet, error) {
 				break
 			}
 			for _, card := range cards {
-				set, err := parseZeonCard(card, cat.grade)
+				set, err := parseZeonCard(card, cat.grade, cat.preorder)
 				if err != nil {
 					return nil, fmt.Errorf("category %s page %d: %w", cat.path, page, err)
 				}
@@ -104,7 +114,7 @@ func (z *ZeonMarket) FetchAll(ctx context.Context) ([]ScrapedSet, error) {
 	return sets, nil
 }
 
-func parseZeonCard(card, grade string) (ScrapedSet, error) {
+func parseZeonCard(card, grade string, preorder bool) (ScrapedSet, error) {
 	title := zeonTitleRe.FindStringSubmatch(card)
 	price := zeonPriceRe.FindStringSubmatch(card)
 	if title == nil || price == nil {
@@ -130,11 +140,16 @@ func parseZeonCard(card, grade string) (ScrapedSet, error) {
 		PriceCents: cents,
 		Currency:   zeonMarketCurrency,
 	}
+	if preorder {
+		set.Availability = AvailabilityPreorder
+		set.Name = zeonPreorderPrefix.ReplaceAllString(set.Name, "")
+		set.Grade, _ = classifyGrade(set.Name)
+		return set, nil
+	}
 	// "Op voorraad" / "Beperkt op voorraad" (limited) are buyable;
-	// "Niet op voorraad" is not. Unknown markup leaves InStock nil.
+	// "Niet op voorraad" is not. Unknown markup leaves it unknown.
 	if m := zeonStockRe.FindStringSubmatch(card); m != nil {
-		inStock := m[1] != "error"
-		set.InStock = &inStock
+		set.Availability = AvailabilityFromBool(m[1] != "error")
 	}
 	return set, nil
 }

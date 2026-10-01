@@ -26,10 +26,10 @@ type runRecord struct {
 }
 
 type priceRecord struct {
-	setID      int64
-	runID      int64
-	priceCents int
-	inStock    *bool
+	setID        int64
+	runID        int64
+	priceCents   int
+	availability scraper.Availability
 }
 
 type fakeStore struct {
@@ -91,7 +91,7 @@ func (f *fakeStore) ApplyRun(ctx context.Context, shopID, runID int64, sets []sc
 			id = f.nextSetID
 			f.setIDByExtID[sc.ExternalID] = id
 		}
-		f.priceHistory = append(f.priceHistory, priceRecord{setID: id, runID: runID, priceCents: sc.PriceCents, inStock: sc.InStock})
+		f.priceHistory = append(f.priceHistory, priceRecord{setID: id, runID: runID, priceCents: sc.PriceCents, availability: sc.Availability})
 		seenIDs = append(seenIDs, sc.ExternalID)
 	}
 	f.deactivateCalls = append(f.deactivateCalls, seenIDs)

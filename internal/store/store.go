@@ -51,6 +51,9 @@ type ReportItem struct {
 	Grade      string
 	PriceCents int
 	Currency   string
+	// Availability is the set's status in the run the row came from, so
+	// reports can single out pre-orders.
+	Availability scraper.Availability
 }
 
 // PriceChange is a set whose price differs between two runs.
@@ -60,11 +63,11 @@ type PriceChange struct {
 	OldCents int
 	NewCents int
 	Currency string
-	// InStock is the set's stock status as of the newer run — nil if the
-	// shop's scraper doesn't report stock. A price drop on a set that's
+	// Availability is the set's status as of the newer run — empty if the
+	// shop's scraper doesn't report it. A price drop on a set that's
 	// currently out of stock isn't a discount anyone can act on, so callers
 	// use this to filter those out rather than reporting them.
-	InStock *bool
+	Availability scraper.Availability
 }
 
 func Open(path string) (*Store, error) {
@@ -219,19 +222,11 @@ func nullIfEmpty(s string) any {
 	return s
 }
 
-func (s *Store) InsertPriceHistory(ctx context.Context, setID, runID int64, priceCents int, currency string, inStock *bool, scrapedAt string) error {
-	var inStockVal any
-	if inStock != nil {
-		if *inStock {
-			inStockVal = 1
-		} else {
-			inStockVal = 0
-		}
-	}
+func (s *Store) InsertPriceHistory(ctx context.Context, setID, runID int64, priceCents int, currency string, availability scraper.Availability, scrapedAt string) error {
 	_, err := s.conn.ExecContext(ctx,
-		`INSERT INTO price_history (set_id, run_id, price_cents, currency, in_stock, scraped_at)
+		`INSERT INTO price_history (set_id, run_id, price_cents, currency, availability, scraped_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
-		setID, runID, priceCents, currency, inStockVal, scrapedAt)
+		setID, runID, priceCents, currency, nullIfEmpty(string(availability)), scrapedAt)
 	return err
 }
 
@@ -254,7 +249,7 @@ func (s *Store) ApplyRun(ctx context.Context, shopID, runID int64, sets []scrape
 		if err != nil {
 			return fmt.Errorf("upsert set %s: %w", sc.ExternalID, err)
 		}
-		if err := txStore.InsertPriceHistory(ctx, setID, runID, sc.PriceCents, sc.Currency, sc.InStock, now); err != nil {
+		if err := txStore.InsertPriceHistory(ctx, setID, runID, sc.PriceCents, sc.Currency, sc.Availability, now); err != nil {
 			return fmt.Errorf("insert price history for set %s: %w", sc.ExternalID, err)
 		}
 	}
@@ -353,7 +348,7 @@ func (s *Store) MarkReported(ctx context.Context, shopID int64, now string) erro
 // previousRunID (covers both brand-new sets and reactivated ones).
 func (s *Store) NewSets(ctx context.Context, shopID, currentRunID, previousRunID int64) ([]ReportItem, error) {
 	rows, err := s.conn.QueryContext(ctx,
-		`SELECT s.name, COALESCE(s.grade, ''), ph.price_cents, ph.currency
+		`SELECT s.name, COALESCE(s.grade, ''), ph.price_cents, ph.currency, COALESCE(ph.availability, '')
 		 FROM sets s
 		 JOIN price_history ph ON ph.set_id = s.id AND ph.run_id = ?
 		 WHERE s.shop_id = ?
@@ -370,7 +365,7 @@ func (s *Store) NewSets(ctx context.Context, shopID, currentRunID, previousRunID
 // in currentRunID.
 func (s *Store) RemovedSets(ctx context.Context, shopID, currentRunID, previousRunID int64) ([]ReportItem, error) {
 	rows, err := s.conn.QueryContext(ctx,
-		`SELECT s.name, COALESCE(s.grade, ''), ph.price_cents, ph.currency
+		`SELECT s.name, COALESCE(s.grade, ''), ph.price_cents, ph.currency, COALESCE(ph.availability, '')
 		 FROM sets s
 		 JOIN price_history ph ON ph.set_id = s.id AND ph.run_id = ?
 		 WHERE s.shop_id = ?
@@ -387,7 +382,7 @@ func (s *Store) RemovedSets(ctx context.Context, shopID, currentRunID, previousR
 // with each set's stock status as of currentRunID.
 func (s *Store) PriceChanges(ctx context.Context, shopID, currentRunID, previousRunID int64) ([]PriceChange, error) {
 	rows, err := s.conn.QueryContext(ctx,
-		`SELECT s.name, COALESCE(s.grade, ''), phOld.price_cents, phNew.price_cents, phNew.currency, phNew.in_stock
+		`SELECT s.name, COALESCE(s.grade, ''), phOld.price_cents, phNew.price_cents, phNew.currency, COALESCE(phNew.availability, '')
 		 FROM sets s
 		 JOIN price_history phOld ON phOld.set_id = s.id AND phOld.run_id = ?
 		 JOIN price_history phNew ON phNew.set_id = s.id AND phNew.run_id = ?
@@ -401,12 +396,8 @@ func (s *Store) PriceChanges(ctx context.Context, shopID, currentRunID, previous
 	var changes []PriceChange
 	for rows.Next() {
 		var c PriceChange
-		var inStock sql.NullBool
-		if err := rows.Scan(&c.Name, &c.Grade, &c.OldCents, &c.NewCents, &c.Currency, &inStock); err != nil {
+		if err := rows.Scan(&c.Name, &c.Grade, &c.OldCents, &c.NewCents, &c.Currency, &c.Availability); err != nil {
 			return nil, err
-		}
-		if inStock.Valid {
-			c.InStock = &inStock.Bool
 		}
 		changes = append(changes, c)
 	}
@@ -418,7 +409,7 @@ func scanReportItems(rows *sql.Rows) ([]ReportItem, error) {
 	var items []ReportItem
 	for rows.Next() {
 		var it ReportItem
-		if err := rows.Scan(&it.Name, &it.Grade, &it.PriceCents, &it.Currency); err != nil {
+		if err := rows.Scan(&it.Name, &it.Grade, &it.PriceCents, &it.Currency, &it.Availability); err != nil {
 			return nil, err
 		}
 		items = append(items, it)

@@ -10,6 +10,7 @@ import (
 	"math"
 	"time"
 
+	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
 	"gunpla-collector/internal/telegram"
 )
@@ -118,7 +119,7 @@ func Run(ctx context.Context, db Store, shop store.Shop, sender telegram.Sender,
 func filterReportableChanges(changes []store.PriceChange) []store.PriceChange {
 	var out []store.PriceChange
 	for _, c := range changes {
-		if c.InStock != nil && !*c.InStock {
+		if c.Availability == scraper.AvailabilityOutOfStock {
 			continue
 		}
 		if pct, ok := pricePctChange(c.OldCents, c.NewCents); ok && math.Abs(pct) < minReportablePricePct {

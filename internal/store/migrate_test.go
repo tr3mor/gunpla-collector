@@ -96,3 +96,51 @@ func TestMigrate_AppliesOnTopOfPreMigrationDatabase(t *testing.T) {
 		t.Fatalf("user_version = %d after migrate, want %d", got, len(names))
 	}
 }
+
+// Migration 5 replaces price_history.in_stock with availability; existing
+// rows must keep their meaning (and unknown stays unknown).
+func TestMigrate_BackfillsAvailabilityFromInStock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+
+	raw, err := sql.Open("sqlite3", path+"?_foreign_keys=on")
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	baseline, err := migrationsFS.ReadFile("migrations/0001_baseline.sql")
+	if err != nil {
+		t.Fatalf("read baseline migration: %v", err)
+	}
+	stmts := []string{
+		string(baseline),
+		`INSERT INTO shops (id, slug, name, base_url) VALUES (1, 's', 'S', 'u')`,
+		`INSERT INTO scrape_runs (id, shop_id, started_at, status) VALUES (1, 1, 't', 'success')`,
+	}
+	for i, in := range []string{"1", "0", "NULL"} {
+		stmts = append(stmts,
+			`INSERT INTO sets (id, shop_id, external_id, url, name, first_seen_at, last_seen_at) VALUES (`+string(rune('1'+i))+`, 1, 'e`+string(rune('1'+i))+`', 'u', 'n', 't', 't')`,
+			`INSERT INTO price_history (set_id, run_id, price_cents, in_stock, scraped_at) VALUES (`+string(rune('1'+i))+`, 1, 100, `+in+`, 't')`)
+	}
+	for _, q := range stmts {
+		if _, err := raw.Exec(q); err != nil {
+			t.Fatalf("seed %q: %v", q, err)
+		}
+	}
+	raw.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer s.Close()
+
+	want := map[int]string{1: "in_stock", 2: "out_of_stock", 3: ""}
+	for setID, w := range want {
+		var got string
+		if err := s.db.QueryRow(`SELECT COALESCE(availability, '') FROM price_history WHERE set_id = ?`, setID).Scan(&got); err != nil {
+			t.Fatalf("set %d: %v", setID, err)
+		}
+		if got != w {
+			t.Errorf("set %d availability = %q, want %q", setID, got, w)
+		}
+	}
+}

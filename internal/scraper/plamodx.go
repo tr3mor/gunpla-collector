@@ -105,14 +105,14 @@ func (p *PlamoDX) FetchAll(ctx context.Context) ([]ScrapedSet, error) {
 				extID := strconv.FormatInt(prod.ID, 10)
 				inStock := prod.IsInStock
 				set := ScrapedSet{
-					ExternalID: extID,
-					URL:        prod.Permalink,
-					Name:       html.UnescapeString(prod.Name),
-					Grade:      cat.grade,
-					PriceCents: priceCents,
-					Currency:   plamodxCurrency,
-					InStock:    &inStock,
-					SKU:        prod.SKU,
+					ExternalID:   extID,
+					URL:          prod.Permalink,
+					Name:         html.UnescapeString(prod.Name),
+					Grade:        cat.grade,
+					PriceCents:   priceCents,
+					Currency:     plamodxCurrency,
+					Availability: AvailabilityFromBool(inStock),
+					SKU:          prod.SKU,
 				}
 				seen[extID] = set // last category to see a product wins; harmless if grades overlap
 			}

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
 )
 
@@ -106,5 +107,26 @@ func TestFormatDiff_DoesNotEscapeItsOwnHTMLTags(t *testing.T) {
 	}
 	if !strings.Contains(msg, "<b>New</b>") {
 		t.Errorf("expected literal <b>New</b> section header, got:\n%s", msg)
+	}
+}
+
+func TestFormatDiff_PreordersGetOwnSection(t *testing.T) {
+	newSets := []store.ReportItem{
+		{Name: "In Stock Kit", PriceCents: 1000, Currency: "EUR", Availability: scraper.AvailabilityInStock},
+		{Name: "Pre Kit", PriceCents: 2000, Currency: "EUR", Availability: scraper.AvailabilityPreorder},
+	}
+	got := FormatDiff("Shop", newSets, nil, nil)
+	iNew := strings.Index(got, "<b>New</b>")
+	iPre := strings.Index(got, "<b>Pre-orders opened</b>")
+	if iNew < 0 || iPre < 0 || iNew > iPre {
+		t.Fatalf("want New section then Pre-orders opened section, got:\n%s", got)
+	}
+	if strings.Index(got, "In Stock Kit") > iPre || strings.Index(got, "Pre Kit") < iPre {
+		t.Errorf("items under wrong section:\n%s", got)
+	}
+
+	onlyPre := FormatDiff("Shop", newSets[1:], nil, nil)
+	if strings.Contains(onlyPre, "<b>New</b>") {
+		t.Errorf("empty New section should be skipped:\n%s", onlyPre)
 	}
 }

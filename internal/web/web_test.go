@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
 )
 
@@ -35,15 +36,13 @@ func (f *fakeStore) ActiveShops(ctx context.Context) ([]store.Shop, error) {
 	return f.shops, nil
 }
 
-func boolPtr(b bool) *bool { return &b }
-
 func newTestServer() (*Server, *fakeStore) {
 	fs := &fakeStore{
 		rows: []store.SetSearchRow{
 			{ShopSlug: "shop-a", ShopName: "Shop A", Name: "RX-78-2 Gundam", Grade: "MG", URL: "https://a/rx78", CurrentCents: 4000, Currency: "EUR", LowestCents: 3500, ScrapedAt: "2026-01-03T00:00:00Z"},
 			{ShopSlug: "shop-a", ShopName: "Shop A", Name: "Zaku II", Grade: "HG", URL: "https://a/zaku", CurrentCents: 2000, Currency: "EUR", LowestCents: 2000, ScrapedAt: "2026-01-03T00:00:00Z"},
 			{ShopSlug: "shop-b", ShopName: "Shop B", Name: "RX-93 Nu Gundam", Grade: "RG", URL: "https://b/rx93", CurrentCents: 3000, Currency: "USD", LowestCents: 3000, ScrapedAt: "2026-01-03T00:00:00Z"},
-			{ShopSlug: "shop-b", ShopName: "Shop B", Name: "Sold Out Kit", Grade: "HG", URL: "https://b/sold-out", CurrentCents: 1000, Currency: "USD", CurrentInStock: boolPtr(false), LowestCents: 1000, ScrapedAt: "2026-01-03T00:00:00Z"},
+			{ShopSlug: "shop-b", ShopName: "Shop B", Name: "Sold Out Kit", Grade: "HG", URL: "https://b/sold-out", CurrentCents: 1000, Currency: "USD", Availability: scraper.AvailabilityOutOfStock, LowestCents: 1000, ScrapedAt: "2026-01-03T00:00:00Z"},
 		},
 		shops: []store.Shop{
 			{ID: 1, Slug: "shop-a", Name: "Shop A"},
@@ -91,7 +90,7 @@ func TestHandleSearch_ShowOutOfStock(t *testing.T) {
 	}
 }
 
-// A set with unknown stock status (CurrentInStock == nil, scraper doesn't
+// A set with unknown stock status (empty Availability, scraper doesn't
 // report it) must never be treated as out of stock.
 func TestHandleSearch_UnknownStockIsNotFilteredAsOutOfStock(t *testing.T) {
 	s, _ := newTestServer()

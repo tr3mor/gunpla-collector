@@ -2,24 +2,25 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
+
+	"gunpla-collector/internal/scraper"
 )
 
 // SetSearchRow is one (shop, set) pair as shown in the search UI: the set's
 // current price (its most recent price_history row) plus the lowest price
 // ever recorded for it, regardless of when.
 type SetSearchRow struct {
-	ShopSlug       string
-	ShopName       string
-	Name           string
-	Grade          string
-	URL            string
-	CurrentCents   int
-	Currency       string
-	CurrentInStock *bool
-	LowestCents    int
-	ScrapedAt      string
+	ShopSlug     string
+	ShopName     string
+	Name         string
+	Grade        string
+	URL          string
+	CurrentCents int
+	Currency     string
+	Availability scraper.Availability
+	LowestCents  int
+	ScrapedAt    string
 }
 
 // SearchSets returns every currently-active set (optionally scoped to one
@@ -30,12 +31,12 @@ type SetSearchRow struct {
 func (s *Store) SearchSets(ctx context.Context, shopSlug string) ([]SetSearchRow, error) {
 	query := `
 		SELECT sh.slug, sh.name, s.name, COALESCE(s.grade, ''), s.url,
-		       cur.price_cents, cur.currency, cur.in_stock, cur.scraped_at,
+		       cur.price_cents, cur.currency, COALESCE(cur.availability, ''), cur.scraped_at,
 		       low.min_price
 		FROM sets s
 		JOIN shops sh ON sh.id = s.shop_id
 		JOIN (
-			SELECT set_id, price_cents, currency, in_stock, scraped_at
+			SELECT set_id, price_cents, currency, availability, scraped_at
 			FROM price_history
 			WHERE id IN (SELECT MAX(id) FROM price_history GROUP BY set_id)
 		) cur ON cur.set_id = s.id
@@ -61,13 +62,9 @@ func (s *Store) SearchSets(ctx context.Context, shopSlug string) ([]SetSearchRow
 	var results []SetSearchRow
 	for rows.Next() {
 		var r SetSearchRow
-		var inStock sql.NullBool
 		if err := rows.Scan(&r.ShopSlug, &r.ShopName, &r.Name, &r.Grade, &r.URL,
-			&r.CurrentCents, &r.Currency, &inStock, &r.ScrapedAt, &r.LowestCents); err != nil {
+			&r.CurrentCents, &r.Currency, &r.Availability, &r.ScrapedAt, &r.LowestCents); err != nil {
 			return nil, fmt.Errorf("scan search row: %w", err)
-		}
-		if inStock.Valid {
-			r.CurrentInStock = &inStock.Bool
 		}
 		results = append(results, r)
 	}
