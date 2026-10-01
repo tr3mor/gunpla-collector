@@ -3,6 +3,7 @@ package scraper
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -30,12 +31,34 @@ type httpFetcher struct {
 	jitter     time.Duration // random extra wait added on top, 0..jitter
 	maxBody    int64         // response body cap in bytes; <=0 means defaultMaxBody
 	accept     string        // Accept header; empty means application/json
+	retries    int           // extra attempts after a transient failure; 0 disables retrying
+	// retryBackoff is the wait before the first retry; it doubles for each
+	// further one.
+	retryBackoff time.Duration
 
 	requested bool // whether get has been called yet — no delay before the first request
 }
 
+// Retry defaults for the real scrapers (tests build httpFetcher directly
+// and leave retrying off unless they're testing it). A daily batch job can
+// afford to wait: 3 retries back off 2s, 4s, 8s.
+const (
+	defaultRetries      = 3
+	defaultRetryBackoff = 2 * time.Second
+)
+
+// transientError marks a failure worth retrying: a dropped connection or
+// truncated body (e.g. "unexpected EOF"), a timeout, or a 429/5xx response.
+// Anything else (404, oversized body, bad request) fails immediately.
+type transientError struct{ err error }
+
+func (e *transientError) Error() string { return e.err.Error() }
+func (e *transientError) Unwrap() error { return e.err }
+
 // get performs one rate-limited GET: delay+jitter before every request
-// after the first, then a 200 check and a body size cap.
+// after the first, then a 200 check and a body size cap. Transient
+// failures are retried with exponential backoff, so one dropped connection
+// in the middle of a many-page scrape doesn't fail the whole run.
 func (f *httpFetcher) get(ctx context.Context, url string) ([]byte, error) {
 	if f.requested {
 		if err := sleepCtx(ctx, f.delay+randJitter(f.jitter)); err != nil {
@@ -44,6 +67,24 @@ func (f *httpFetcher) get(ctx context.Context, url string) ([]byte, error) {
 	}
 	f.requested = true
 
+	backoff := f.retryBackoff
+	for attempt := 0; ; attempt++ {
+		body, err := f.getOnce(ctx, url)
+		if err == nil {
+			return body, nil
+		}
+		var tr *transientError
+		if attempt >= f.retries || ctx.Err() != nil || !errors.As(err, &tr) {
+			return nil, err
+		}
+		if err := sleepCtx(ctx, backoff); err != nil {
+			return nil, err
+		}
+		backoff *= 2
+	}
+}
+
+func (f *httpFetcher) getOnce(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -57,11 +98,15 @@ func (f *httpFetcher) get(ctx context.Context, url string) ([]byte, error) {
 
 	resp, err := f.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, &transientError{err}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status %d from %s", resp.StatusCode, url)
+		err := fmt.Errorf("unexpected status %d from %s", resp.StatusCode, url)
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			return nil, &transientError{err}
+		}
+		return nil, err
 	}
 
 	maxBody := f.maxBody
@@ -72,7 +117,7 @@ func (f *httpFetcher) get(ctx context.Context, url string) ([]byte, error) {
 	// without buffering a potentially huge body first.
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	if err != nil {
-		return nil, fmt.Errorf("read response from %s: %w", url, err)
+		return nil, &transientError{fmt.Errorf("read response from %s: %w", url, err)}
 	}
 	if int64(len(body)) > maxBody {
 		return nil, fmt.Errorf("response from %s exceeds %d byte limit", url, maxBody)

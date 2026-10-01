@@ -51,8 +51,10 @@ type GeeksHeaven struct {
 func NewGeeksHeaven() *GeeksHeaven {
 	return &GeeksHeaven{
 		fetcher: httpFetcher{
-			httpClient: &http.Client{Timeout: 20 * time.Second},
-			userAgent:  defaultUserAgent,
+			httpClient:   &http.Client{Timeout: 20 * time.Second},
+			userAgent:    defaultUserAgent,
+			retries:      defaultRetries,
+			retryBackoff: defaultRetryBackoff,
 			// Minimum wait between requests, honoring robots.txt's
 			// `Crawl-delay: 2`, plus jitter on top.
 			delay:  2 * time.Second,

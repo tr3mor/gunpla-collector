@@ -60,9 +60,11 @@ type ZeonMarket struct {
 func NewZeonMarket() *ZeonMarket {
 	return &ZeonMarket{
 		fetcher: httpFetcher{
-			httpClient: &http.Client{Timeout: 20 * time.Second},
-			userAgent:  defaultUserAgent,
-			accept:     "text/html",
+			httpClient:   &http.Client{Timeout: 20 * time.Second},
+			userAgent:    defaultUserAgent,
+			retries:      defaultRetries,
+			retryBackoff: defaultRetryBackoff,
+			accept:       "text/html",
 			// robots.txt specifies no Crawl-delay for this store, so this
 			// is a conservative self-imposed choice rather than one
 			// derived from site policy.
