@@ -89,6 +89,9 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	nameSubstr := strings.TrimSpace(q.Get("q"))
 	nameRegexp := strings.TrimSpace(q.Get("regexp"))
 	shopSlug := strings.TrimSpace(q.Get("shop"))
+	// "grade" is MG/HG/RG/PG (case-insensitive), or "none" for sets with no
+	// grade (e.g. most pre-orders).
+	grade := strings.TrimSpace(q.Get("grade"))
 	// Out-of-stock sets are hidden unless the caller explicitly asks to see
 	// them — matches the UI's "hide out of stock" checkbox, checked by
 	// default.
@@ -116,6 +119,15 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	for _, row := range rows {
 		if nameSubstr != "" && !strings.Contains(strings.ToLower(row.Name), strings.ToLower(nameSubstr)) {
 			continue
+		}
+		if grade != "" {
+			if strings.EqualFold(grade, "none") {
+				if row.Grade != "" {
+					continue
+				}
+			} else if !strings.EqualFold(row.Grade, grade) {
+				continue
+			}
 		}
 		if re != nil && !re.MatchString(row.Name) {
 			continue

@@ -99,6 +99,14 @@
   <input id="q" type="search" placeholder="Search by name…" autocomplete="off">
   <input id="regexp" type="text" placeholder="Regexp filter (optional)" autocomplete="off">
   <select id="shop"><option value="">All shops</option></select>
+  <select id="grade">
+    <option value="">All grades</option>
+    <option value="MG">MG</option>
+    <option value="HG">HG</option>
+    <option value="RG">RG</option>
+    <option value="PG">PG</option>
+    <option value="none">N/A</option>
+  </select>
   <label class="checkbox"><input id="hideOOS" type="checkbox" checked> Hide out of stock</label>
 </div>
 <main>
@@ -115,6 +123,7 @@
   var qInput = document.getElementById('q');
   var reInput = document.getElementById('regexp');
   var shopSelect = document.getElementById('shop');
+  var gradeSelect = document.getElementById('grade');
   var hideOOSCheckbox = document.getElementById('hideOOS');
   var statusEl = document.getElementById('status');
   var rowsEl = document.getElementById('rows');
@@ -170,6 +179,7 @@
     if (qInput.value.trim()) params.set('q', qInput.value.trim());
     if (reInput.value.trim()) params.set('regexp', reInput.value.trim());
     if (shopSelect.value) params.set('shop', shopSelect.value);
+    if (gradeSelect.value) params.set('grade', gradeSelect.value);
     if (!hideOOSCheckbox.checked) params.set('show_out_of_stock', '1');
 
     var requestID = ++currentRequest;
@@ -201,6 +211,7 @@
   qInput.addEventListener('input', debouncedSearch);
   reInput.addEventListener('input', debouncedSearch);
   shopSelect.addEventListener('change', search);
+  gradeSelect.addEventListener('change', search);
   hideOOSCheckbox.addEventListener('change', search);
 
   loadShops();

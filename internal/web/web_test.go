@@ -196,3 +196,30 @@ func TestHandleIndex_ServesHTML(t *testing.T) {
 		t.Error("body is empty")
 	}
 }
+
+func TestHandleSearch_GradeFilter(t *testing.T) {
+	s, _ := newTestServer()
+	s.store.(*fakeStore).rows = append(s.store.(*fakeStore).rows,
+		store.SetSearchRow{ShopSlug: "shop-a", ShopName: "Shop A", Name: "Ungraded Pre", URL: "https://a/pre", CurrentCents: 1500, Currency: "EUR", LowestCents: 1500, Availability: scraper.AvailabilityPreorder})
+
+	names := func(query string) []string {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/search?"+query, nil))
+		var got []string
+		for _, r := range decodeSearch(t, rec.Body.Bytes()) {
+			got = append(got, r.Name)
+		}
+		return got
+	}
+
+	if got := names("grade=hg"); len(got) != 1 || got[0] != "Zaku II" {
+		t.Errorf("grade=hg = %v, want [Zaku II] (case-insensitive, sold-out HG hidden)", got)
+	}
+	if got := names("grade=none"); len(got) != 1 || got[0] != "Ungraded Pre" {
+		t.Errorf("grade=none = %v, want [Ungraded Pre]", got)
+	}
+	if got := names("grade=PG"); len(got) != 0 {
+		t.Errorf("grade=PG = %v, want none", got)
+	}
+}
