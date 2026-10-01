@@ -29,6 +29,7 @@ type httpFetcher struct {
 	delay      time.Duration // minimum wait between requests
 	jitter     time.Duration // random extra wait added on top, 0..jitter
 	maxBody    int64         // response body cap in bytes; <=0 means defaultMaxBody
+	accept     string        // Accept header; empty means application/json
 
 	requested bool // whether get has been called yet — no delay before the first request
 }
@@ -48,7 +49,11 @@ func (f *httpFetcher) get(ctx context.Context, url string) ([]byte, error) {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", f.userAgent)
-	req.Header.Set("Accept", "application/json")
+	accept := f.accept
+	if accept == "" {
+		accept = "application/json"
+	}
+	req.Header.Set("Accept", accept)
 
 	resp, err := f.httpClient.Do(req)
 	if err != nil {
