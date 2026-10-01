@@ -49,6 +49,7 @@ func init() {
 	scraper.Register(scraper.NewGeeksHeaven())
 	scraper.Register(scraper.NewGundamStore())
 	scraper.Register(scraper.NewPlamoDX())
+	scraper.Register(scraper.NewZeonMarket())
 }
 
 func main() {

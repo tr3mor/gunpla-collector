@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
 )
 
@@ -200,15 +201,15 @@ func TestRun_StuckRunningIsTreatedAsFailed(t *testing.T) {
 }
 
 func TestFilterReportableChanges(t *testing.T) {
-	inStock, outOfStock := true, false
+	inStock, outOfStock := scraper.AvailabilityInStock, scraper.AvailabilityOutOfStock
 
 	changes := []store.PriceChange{
-		{Name: "Big drop, in stock", OldCents: 10000, NewCents: 9000, InStock: &inStock},        // -10%, kept
-		{Name: "Big drop, out of stock", OldCents: 10000, NewCents: 9000, InStock: &outOfStock}, // -10% but unbuyable, dropped
-		{Name: "Tiny drop, in stock", OldCents: 10000, NewCents: 9950, InStock: &inStock},       // -0.5%, dropped (noise)
-		{Name: "Big drop, unknown stock", OldCents: 10000, NewCents: 9000, InStock: nil},        // no stock data, kept
-		{Name: "Exactly at threshold", OldCents: 10000, NewCents: 9500, InStock: &inStock},      // -5.0%, kept (>=)
-		{Name: "Zero old price", OldCents: 0, NewCents: 1000, InStock: &inStock},                // undefined %, always kept
+		{Name: "Big drop, in stock", OldCents: 10000, NewCents: 9000, Availability: inStock},        // -10%, kept
+		{Name: "Big drop, out of stock", OldCents: 10000, NewCents: 9000, Availability: outOfStock}, // -10% but unbuyable, dropped
+		{Name: "Tiny drop, in stock", OldCents: 10000, NewCents: 9950, Availability: inStock},       // -0.5%, dropped (noise)
+		{Name: "Big drop, unknown stock", OldCents: 10000, NewCents: 9000, Availability: ""},        // no stock data, kept
+		{Name: "Exactly at threshold", OldCents: 10000, NewCents: 9500, Availability: inStock},      // -5.0%, kept (>=)
+		{Name: "Zero old price", OldCents: 0, NewCents: 1000, Availability: inStock},                // undefined %, always kept
 	}
 
 	got := filterReportableChanges(changes)

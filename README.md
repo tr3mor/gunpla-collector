@@ -11,12 +11,15 @@ Currently supports:
   HG, RG, PG grades, prices in USD)
 - [PlamoDX](https://plamodx.nl/product-category/gunpla/) (MG, HG, RG, PG
   grades, prices in EUR)
+- [Zeonmarket](https://www.zeonmarket.nl/MG) (MG, HG, RG, PG grades plus
+  its [pre-order list](https://www.zeonmarket.nl/Pre-orders), prices in EUR)
 
 More shops can be added by implementing the `scraper.Scraper` interface —
 see `internal/scraper/geeksheaven.go` (Lightspeed eCom JSON API),
 `internal/scraper/gundamstore.go` (Shopify `products.json` API), or
-`internal/scraper/plamodx.go` (WooCommerce Store REST API) as templates.
-All three embed the shared rate-limited, size-capped JSON client in
+`internal/scraper/plamodx.go` (WooCommerce Store REST API), or
+`internal/scraper/zeonmarket.go` (server-rendered HTML, for shops with no
+API) as templates. All four embed the shared rate-limited, size-capped client in
 `internal/scraper/http.go`, so a new scraper only needs its own URL
 construction and response-shape structs.
 
@@ -65,8 +68,14 @@ supports a `?format=json` API on every category page. Gundam Store runs on
 Shopify, whose storefront exposes the same collection-page data as JSON via
 `/collections/<handle>/products.json`. PlamoDX runs on WooCommerce, whose
 public Store REST API (`/wp-json/wc/store/v1/products`) needs no
-authentication. All three scrapers read that JSON directly instead of
-parsing HTML or driving a headless browser.
+authentication. Those three scrapers read JSON directly. Zeonmarket runs
+on CCV Shop, which has no JSON API, so its scraper parses the
+server-rendered category pages (`/MG?page=N`, 12 products per page, until
+an empty page); no headless browser is needed for any shop.
+
+Each price record carries an availability (`in_stock`, `out_of_stock`,
+`preorder`, or unknown). Newly opened pre-orders are reported in their own
+"Pre-orders opened" section of the daily Telegram report.
 
 ## Telegram bot setup
 
@@ -88,7 +97,7 @@ Environment variables:
 | `GUNPLA_DB_PATH`               | `/data/gunpla.db`  | SQLite file path — must be on a mounted volume in Docker |
 | `GUNPLA_TELEGRAM_BOT_TOKEN`    | —                   | required for `report`                                    |
 | `GUNPLA_TELEGRAM_CHAT_ID`      | —                   | required for `report`                                    |
-| `GUNPLA_SHOPS`                 | (all active shops) | comma-separated slugs, e.g. `geeksheaven,gundamstore,plamodx` |
+| `GUNPLA_SHOPS`                 | (all active shops) | comma-separated slugs, e.g. `geeksheaven,gundamstore,plamodx,zeonmarket` |
 | `GUNPLA_RUN_TIMEOUT`           | `30m` (collect) / `5m` (report) | whole-run timeout, Go duration string e.g. `45m` |
 | `GUNPLA_FORCE`                 | unset (false)       | collect only: equivalent to `--force`, for use from `docker compose exec` |
 | `GUNPLA_UI_ADDR`               | `:8080`             | serve only: address to listen on                          |
@@ -163,7 +172,7 @@ go test ./...
 ```
 
 Covers price parsing (string and float→cents), the GeeksHeaven, Gundam
-Store, and PlamoDX JSON API pagination/grade-filtering logic (against a
+Store, PlamoDX, and Zeonmarket pagination/grade-filtering logic (against a
 local `httptest` server, no network), the new/removed/price-change diff
 logic and Telegram message formatting including per-shop currency symbols
 (synthetic data),

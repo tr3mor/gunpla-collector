@@ -110,15 +110,15 @@ func (g *GundamStore) FetchAll(ctx context.Context) ([]ScrapedSet, error) {
 				extID := strconv.FormatInt(p.ID, 10)
 				available := v.Available
 				set := ScrapedSet{
-					ExternalID: extID,
-					URL:        g.host + "/products/" + p.Handle,
-					Name:       p.Title,
-					Grade:      cat.grade,
-					PriceCents: priceCents,
-					Currency:   gundamStoreCurrency,
-					InStock:    &available,
-					EAN:        v.Barcode,
-					SKU:        v.SKU,
+					ExternalID:   extID,
+					URL:          g.host + "/products/" + p.Handle,
+					Name:         p.Title,
+					Grade:        cat.grade,
+					PriceCents:   priceCents,
+					Currency:     gundamStoreCurrency,
+					Availability: AvailabilityFromBool(available),
+					EAN:          v.Barcode,
+					SKU:          v.SKU,
 				}
 				seen[extID] = set // last collection to see a product wins; harmless if grades overlap
 			}

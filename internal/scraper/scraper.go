@@ -8,6 +8,25 @@ import (
 	"sort"
 )
 
+// Availability is whether a set can be bought now, is out of stock, or is
+// open for pre-order. The empty value means the shop doesn't say.
+type Availability string
+
+const (
+	AvailabilityUnknown    Availability = ""
+	AvailabilityInStock    Availability = "in_stock"
+	AvailabilityOutOfStock Availability = "out_of_stock"
+	AvailabilityPreorder   Availability = "preorder"
+)
+
+// AvailabilityFromBool maps a shop's plain in-stock flag.
+func AvailabilityFromBool(inStock bool) Availability {
+	if inStock {
+		return AvailabilityInStock
+	}
+	return AvailabilityOutOfStock
+}
+
 type ScrapedSet struct {
 	ExternalID string
 	URL        string
@@ -15,7 +34,9 @@ type ScrapedSet struct {
 	Grade      string
 	PriceCents int
 	Currency   string
-	InStock    *bool
+	// Availability is the shop's stock status for the set; empty if the
+	// shop doesn't report one.
+	Availability Availability
 	// EAN/SKU: canonical product identifiers, kept for a future cross-shop
 	// matching feature. Not every shop exposes both, so either may be empty.
 	EAN string

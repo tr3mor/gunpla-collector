@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 
+	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
 )
 
@@ -71,16 +72,16 @@ func (s *Server) handleShops(w http.ResponseWriter, r *http.Request) {
 // searchResultJSON is the wire shape for one row in the search results —
 // deliberately flat (no nested shop object) to keep the frontend simple.
 type searchResultJSON struct {
-	ShopSlug       string `json:"shop_slug"`
-	ShopName       string `json:"shop_name"`
-	Name           string `json:"name"`
-	Grade          string `json:"grade"`
-	URL            string `json:"url"`
-	CurrentCents   int    `json:"current_price_cents"`
-	Currency       string `json:"currency"`
-	CurrentInStock *bool  `json:"current_in_stock"`
-	LowestCents    int    `json:"lowest_price_cents"`
-	ScrapedAt      string `json:"scraped_at"`
+	ShopSlug     string `json:"shop_slug"`
+	ShopName     string `json:"shop_name"`
+	Name         string `json:"name"`
+	Grade        string `json:"grade"`
+	URL          string `json:"url"`
+	CurrentCents int    `json:"current_price_cents"`
+	Currency     string `json:"currency"`
+	Availability string `json:"availability"`
+	LowestCents  int    `json:"lowest_price_cents"`
+	ScrapedAt    string `json:"scraped_at"`
 }
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
@@ -88,6 +89,9 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	nameSubstr := strings.TrimSpace(q.Get("q"))
 	nameRegexp := strings.TrimSpace(q.Get("regexp"))
 	shopSlug := strings.TrimSpace(q.Get("shop"))
+	// "grade" is MG/HG/RG/PG (case-insensitive), or "none" for sets with no
+	// grade (e.g. most pre-orders).
+	grade := strings.TrimSpace(q.Get("grade"))
 	// Out-of-stock sets are hidden unless the caller explicitly asks to see
 	// them — matches the UI's "hide out of stock" checkbox, checked by
 	// default.
@@ -116,23 +120,32 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		if nameSubstr != "" && !strings.Contains(strings.ToLower(row.Name), strings.ToLower(nameSubstr)) {
 			continue
 		}
+		if grade != "" {
+			if strings.EqualFold(grade, "none") {
+				if row.Grade != "" {
+					continue
+				}
+			} else if !strings.EqualFold(row.Grade, grade) {
+				continue
+			}
+		}
 		if re != nil && !re.MatchString(row.Name) {
 			continue
 		}
-		if !showOutOfStock && row.CurrentInStock != nil && !*row.CurrentInStock {
+		if !showOutOfStock && row.Availability == scraper.AvailabilityOutOfStock {
 			continue
 		}
 		out = append(out, searchResultJSON{
-			ShopSlug:       row.ShopSlug,
-			ShopName:       row.ShopName,
-			Name:           row.Name,
-			Grade:          row.Grade,
-			URL:            row.URL,
-			CurrentCents:   row.CurrentCents,
-			Currency:       row.Currency,
-			CurrentInStock: row.CurrentInStock,
-			LowestCents:    row.LowestCents,
-			ScrapedAt:      row.ScrapedAt,
+			ShopSlug:     row.ShopSlug,
+			ShopName:     row.ShopName,
+			Name:         row.Name,
+			Grade:        row.Grade,
+			URL:          row.URL,
+			CurrentCents: row.CurrentCents,
+			Currency:     row.Currency,
+			Availability: string(row.Availability),
+			LowestCents:  row.LowestCents,
+			ScrapedAt:    row.ScrapedAt,
 		})
 	}
 	s.writeJSON(w, out)

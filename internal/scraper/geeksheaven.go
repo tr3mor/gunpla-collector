@@ -138,15 +138,15 @@ func (g *GeeksHeaven) FetchAll(ctx context.Context) ([]ScrapedSet, error) {
 				extID := strconv.FormatInt(p.ID, 10)
 				available := p.Available
 				set := ScrapedSet{
-					ExternalID: extID,
-					URL:        g.absoluteURL(p.URL),
-					Name:       p.Title,
-					Grade:      cat.grade,
-					PriceCents: CentsFromDecimal(p.Price.PriceIncl),
-					Currency:   "EUR",
-					InStock:    &available,
-					EAN:        p.EAN,
-					SKU:        p.SKU,
+					ExternalID:   extID,
+					URL:          g.absoluteURL(p.URL),
+					Name:         p.Title,
+					Grade:        cat.grade,
+					PriceCents:   CentsFromDecimal(p.Price.PriceIncl),
+					Currency:     "EUR",
+					Availability: AvailabilityFromBool(available),
+					EAN:          p.EAN,
+					SKU:          p.SKU,
 				}
 				seen[extID] = set // last category to see a product wins; harmless if grades overlap
 			}
