@@ -5,6 +5,11 @@ import (
 	"testing"
 )
 
+// sameWords compares word lists, treating nil and empty as equal.
+func sameWords(a, b []string) bool {
+	return len(a) == len(b) && (len(a) == 0 || reflect.DeepEqual(a, b))
+}
+
 func TestNewKey(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -32,10 +37,10 @@ func TestNewKey(t *testing.T) {
 			if k.Model != tt.model {
 				t.Errorf("Model = %q, want %q", k.Model, tt.model)
 			}
-			if !reflect.DeepEqual(append([]string(nil), k.Distinct...), tt.distinct) && !(len(k.Distinct) == 0 && len(tt.distinct) == 0) {
+			if !sameWords(k.Distinct, tt.distinct) {
 				t.Errorf("Distinct = %v, want %v", k.Distinct, tt.distinct)
 			}
-			if !reflect.DeepEqual(append([]string(nil), k.Tokens...), tt.tokens) && !(len(k.Tokens) == 0 && len(tt.tokens) == 0) {
+			if !sameWords(k.Tokens, tt.tokens) {
 				t.Errorf("Tokens = %v, want %v", k.Tokens, tt.tokens)
 			}
 		})
