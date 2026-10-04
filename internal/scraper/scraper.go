@@ -50,6 +50,14 @@ type Scraper interface {
 	FetchAll(ctx context.Context) ([]ScrapedSet, error)
 }
 
+// BarcodeLookup is implemented by scrapers whose listing endpoint leaves
+// out barcodes that a per-product endpoint has. The collector calls it
+// only for sets with no known EAN, a capped number per run.
+type BarcodeLookup interface {
+	// LookupEAN returns set's barcode, or "" if the shop has none for it.
+	LookupEAN(ctx context.Context, set ScrapedSet) (string, error)
+}
+
 var registry = map[string]Scraper{}
 
 // Register adds a scraper implementation, keyed by its shop slug.

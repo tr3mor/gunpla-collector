@@ -163,3 +163,35 @@ func TestGundamStore_FetchAll_NoProductsIsError(t *testing.T) {
 		t.Fatal("expected error when no products found in any collection, got nil")
 	}
 }
+
+func TestGundamStore_LookupEAN(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/products/mg-one.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"product": {"id": 101, "handle": "mg-one", "variants": [{"barcode": " 4573102638236 ", "sku": "MG 1"}]}}`))
+	})
+	mux.HandleFunc("/products/gb-limited.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"product": {"id": 102, "handle": "gb-limited", "variants": [{"barcode": null, "sku": "GB 1"}]}}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	g := &GundamStore{fetcher: httpFetcher{httpClient: srv.Client(), userAgent: "test"}, host: srv.URL}
+
+	cases := []struct{ handle, want string }{
+		{"mg-one", "4573102638236"},
+		{"gb-limited", ""},
+	}
+	for _, c := range cases {
+		got, err := g.LookupEAN(context.Background(), ScrapedSet{URL: srv.URL + "/products/" + c.handle})
+		if err != nil {
+			t.Fatalf("LookupEAN(%s): %v", c.handle, err)
+		}
+		if got != c.want {
+			t.Errorf("LookupEAN(%s) = %q, want %q", c.handle, got, c.want)
+		}
+	}
+
+	if _, err := g.LookupEAN(context.Background(), ScrapedSet{URL: srv.URL + "/products/missing"}); err == nil {
+		t.Error("LookupEAN on a 404 returned no error")
+	}
+}

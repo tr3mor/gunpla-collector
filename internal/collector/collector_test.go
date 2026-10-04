@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
@@ -40,13 +41,41 @@ type fakeStore struct {
 	priceHistory    []priceRecord
 	deactivateCalls [][]string
 	upsertCalls     int
+	eans            map[string]string // external id -> EAN as last applied
+	eanChecks       map[string]store.EANCheck
+	markCalls       [][]string
 }
 
 func newFakeStore() *fakeStore {
 	return &fakeStore{
 		runs:         map[int64]*runRecord{},
 		setIDByExtID: map[string]int64{},
+		eans:         map[string]string{},
+		eanChecks:    map[string]store.EANCheck{},
 	}
+}
+
+func (f *fakeStore) EANChecks(ctx context.Context, shopID int64) (map[string]store.EANCheck, error) {
+	out := map[string]store.EANCheck{}
+	for id, c := range f.eanChecks {
+		out[id] = c
+	}
+	for id, ean := range f.eans {
+		c := out[id]
+		c.EAN = ean
+		out[id] = c
+	}
+	return out, nil
+}
+
+func (f *fakeStore) MarkEANChecked(ctx context.Context, shopID int64, externalIDs []string, now string) error {
+	f.markCalls = append(f.markCalls, externalIDs)
+	for _, id := range externalIDs {
+		c := f.eanChecks[id]
+		c.CheckedAt = now
+		f.eanChecks[id] = c
+	}
+	return nil
 }
 
 func (f *fakeStore) StartRun(ctx context.Context, shopID int64, startedAt string) (int64, error) {
@@ -91,6 +120,7 @@ func (f *fakeStore) ApplyRun(ctx context.Context, shopID, runID int64, sets []sc
 			id = f.nextSetID
 			f.setIDByExtID[sc.ExternalID] = id
 		}
+		f.eans[sc.ExternalID] = sc.EAN
 		f.priceHistory = append(f.priceHistory, priceRecord{setID: id, runID: runID, priceCents: sc.PriceCents, availability: sc.Availability})
 		seenIDs = append(seenIDs, sc.ExternalID)
 	}
@@ -112,6 +142,23 @@ func (f *fakeScraper) ShopName() string { return "Fake" }
 func (f *fakeScraper) BaseURL() string  { return "https://example.com" }
 func (f *fakeScraper) FetchAll(ctx context.Context) ([]scraper.ScrapedSet, error) {
 	return f.sets, f.err
+}
+
+// fakeLookupScraper is a fakeScraper that also implements
+// scraper.BarcodeLookup, serving barcodes from a map.
+type fakeLookupScraper struct {
+	fakeScraper
+	barcodes map[string]string // external id -> barcode; missing = none
+	err      error
+	lookedUp []string
+}
+
+func (f *fakeLookupScraper) LookupEAN(ctx context.Context, set scraper.ScrapedSet) (string, error) {
+	f.lookedUp = append(f.lookedUp, set.ExternalID)
+	if f.err != nil {
+		return "", f.err
+	}
+	return f.barcodes[set.ExternalID], nil
 }
 
 func mkSets(n int) []scraper.ScrapedSet {
@@ -251,5 +298,67 @@ func TestRun_SkipsNonKits(t *testing.T) {
 	}
 	if db.runs[1].setsFound != 3 {
 		t.Errorf("sets_found = %d, want 3", db.runs[1].setsFound)
+	}
+}
+
+func TestRun_BarcodeLookup(t *testing.T) {
+	db := newFakeStore()
+	shop := store.Shop{ID: 1, Slug: "fake"}
+	sets := mkSets(5)
+	sets[0].EAN = "listed" // the listing already has one: no lookup
+	sc := &fakeLookupScraper{fakeScraper: fakeScraper{sets: sets}, barcodes: map[string]string{"id-1": "4573102638236", "id-2": "4573102579508"}}
+
+	if err := Run(context.Background(), db, shop, sc, discardLogger(), Options{}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := fmt.Sprint(sc.lookedUp); got != "[id-1 id-2 id-3 id-4]" {
+		t.Errorf("looked up %s, want [id-1 id-2 id-3 id-4]", got)
+	}
+	if db.eans["id-0"] != "listed" || db.eans["id-1"] != "4573102638236" || db.eans["id-2"] != "4573102579508" || db.eans["id-3"] != "" {
+		t.Errorf("applied EANs = %v", db.eans)
+	}
+	if len(db.markCalls) != 1 || len(db.markCalls[0]) != 4 {
+		t.Errorf("MarkEANChecked calls = %v, want one with the 4 looked-up ids", db.markCalls)
+	}
+
+	// Second run: found barcodes are reused from the store (not wiped by
+	// the listing's empty one), and recently checked sets aren't fetched.
+	sc.lookedUp = nil
+	if err := Run(context.Background(), db, shop, sc, discardLogger(), Options{}); err != nil {
+		t.Fatalf("Run 2: %v", err)
+	}
+	if len(sc.lookedUp) != 0 {
+		t.Errorf("second run looked up %v, want nothing", sc.lookedUp)
+	}
+	if db.eans["id-1"] != "4573102638236" {
+		t.Errorf("stored EAN not kept on second run: %v", db.eans)
+	}
+
+	// A check older than eanRecheckAfter is due again.
+	db.eanChecks["id-3"] = store.EANCheck{CheckedAt: time.Now().UTC().Add(-eanRecheckAfter - time.Hour).Format(time.RFC3339)}
+	if err := Run(context.Background(), db, shop, sc, discardLogger(), Options{}); err != nil {
+		t.Fatalf("Run 3: %v", err)
+	}
+	if got := fmt.Sprint(sc.lookedUp); got != "[id-3]" {
+		t.Errorf("third run looked up %s, want [id-3]", got)
+	}
+}
+
+// Lookups failing must not fail the collect, must stop after a few in a
+// row, and must leave the sets unmarked so they're retried next run.
+func TestRun_BarcodeLookupFailuresAreNotFatal(t *testing.T) {
+	db := newFakeStore()
+	sc := &fakeLookupScraper{fakeScraper: fakeScraper{sets: mkSets(10)}, err: errors.New("503")}
+	if err := Run(context.Background(), db, store.Shop{ID: 1, Slug: "fake"}, sc, discardLogger(), Options{}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(sc.lookedUp) != maxEANLookupFailures {
+		t.Errorf("attempted %d lookups, want %d before giving up", len(sc.lookedUp), maxEANLookupFailures)
+	}
+	if len(db.markCalls) != 0 {
+		t.Errorf("MarkEANChecked called %v, want not at all", db.markCalls)
+	}
+	if db.runs[1].status != "success" {
+		t.Errorf("run status = %s, want success", db.runs[1].status)
 	}
 }

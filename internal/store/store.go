@@ -222,6 +222,50 @@ func nullIfEmpty(s string) any {
 	return s
 }
 
+// EANCheck is what's stored about one set's barcode.
+type EANCheck struct {
+	EAN       string // "" if none known
+	CheckedAt string // when a barcode lookup last ran; "" if never
+}
+
+// EANChecks returns the stored EAN and last barcode lookup time of every
+// set of shopID, keyed by external id.
+func (s *Store) EANChecks(ctx context.Context, shopID int64) (map[string]EANCheck, error) {
+	rows, err := s.conn.QueryContext(ctx,
+		`SELECT external_id, COALESCE(ean, ''), COALESCE(ean_checked_at, '') FROM sets WHERE shop_id = ?`, shopID)
+	if err != nil {
+		return nil, fmt.Errorf("query ean checks: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]EANCheck{}
+	for rows.Next() {
+		var extID string
+		var c EANCheck
+		if err := rows.Scan(&extID, &c.EAN, &c.CheckedAt); err != nil {
+			return nil, fmt.Errorf("scan ean check: %w", err)
+		}
+		out[extID] = c
+	}
+	return out, rows.Err()
+}
+
+// MarkEANChecked records that a barcode lookup ran at now for these sets
+// of shopID, whether or not it found one.
+func (s *Store) MarkEANChecked(ctx context.Context, shopID int64, externalIDs []string, now string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback() // no-op once committed
+	for _, id := range externalIDs {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE sets SET ean_checked_at = ? WHERE shop_id = ? AND external_id = ?`, now, shopID, id); err != nil {
+			return fmt.Errorf("mark ean checked for %s: %w", id, err)
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *Store) InsertPriceHistory(ctx context.Context, setID, runID int64, priceCents int, currency string, availability scraper.Availability, scrapedAt string) error {
 	_, err := s.conn.ExecContext(ctx,
 		`INSERT INTO price_history (set_id, run_id, price_cents, currency, availability, scraped_at)
