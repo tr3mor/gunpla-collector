@@ -38,6 +38,9 @@ var plamodxGradeCategories = []struct {
 	{"high-grade-hg", "HG"},
 	{"real-grade-rg", "RG"},
 	{"perfect-grade-pg", "PG"},
+	// MGEX is a separate category here, not part of master-grade-mg. The
+	// other shops file MGEX kits under MG, so use the same grade.
+	{"mgex", "MG"},
 }
 
 type PlamoDX struct {

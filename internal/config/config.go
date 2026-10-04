@@ -22,6 +22,23 @@ type Config struct {
 	Force bool
 	// UIAddr is the address `serve` listens on, e.g. ":8080".
 	UIAddr string
+	// USDToEUR is the fallback USD->EUR rate, used only when the live rate
+	// can't be fetched at startup (see package fx).
+	USDToEUR float64
+}
+
+// defaultUSDToEUR is the fallback USD->EUR rate (ECB reference, Oct 2026),
+// used if the live lookup at startup fails. Override with
+// GUNPLA_USD_EUR_RATE.
+const defaultUSDToEUR = 0.89
+
+// parseRate parses a positive exchange rate; empty or invalid falls back.
+func parseRate(raw string, fallback float64) float64 {
+	r, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || r <= 0 {
+		return fallback
+	}
+	return r
 }
 
 func Load() Config {
@@ -33,6 +50,7 @@ func Load() Config {
 		RunTimeout:     parseRunTimeout(os.Getenv("GUNPLA_RUN_TIMEOUT")),
 		Force:          parseBool(os.Getenv("GUNPLA_FORCE")),
 		UIAddr:         getEnv("GUNPLA_UI_ADDR", ":8080"),
+		USDToEUR:       parseRate(os.Getenv("GUNPLA_USD_EUR_RATE"), defaultUSDToEUR),
 	}
 }
 

@@ -52,6 +52,14 @@ func Run(ctx context.Context, db Store, shop store.Shop, s scraper.Scraper, logg
 		return fmt.Errorf("fetch %s: %w", shop.Slug, fetchErr)
 	}
 
+	// Accessories, figures and other product lines that shops file under a
+	// grade category aren't Gunpla kits; don't track them.
+	sets, dropped := scraper.FilterKits(sets)
+	if len(dropped) > 0 {
+		logger.Info("skipped non-kit listings", "shop", shop.Slug, "count", len(dropped))
+		logger.Debug("non-kit listings", "shop", shop.Slug, "names", dropped)
+	}
+
 	prevCount, ok, err := db.LastSuccessfulRunSetsFound(ctx, shop.ID)
 	if err != nil {
 		_ = db.FinishRunFailed(ctx, runID, now(), err.Error())

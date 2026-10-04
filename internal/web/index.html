@@ -15,6 +15,7 @@
     --accent: #2f6fed;
     --danger: #c23c3c;
     --good: #1a7f37;
+    --gold: #a86f00;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -26,6 +27,7 @@
       --accent: #6d9bff;
       --danger: #ff6b6b;
       --good: #4fd17a;
+      --gold: #ffd24a;
     }
   }
   * { box-sizing: border-box; }
@@ -81,6 +83,13 @@
   .price-current { font-variant-numeric: tabular-nums; }
   .price-lowest { color: var(--muted); font-variant-numeric: tabular-nums; }
   .price-current.at-low { color: var(--good); font-weight: 600; }
+  tr.group-head td { background: color-mix(in srgb, var(--accent) 8%, var(--panel)); font-weight: 600; border-bottom: 1px solid var(--border); }
+  tr.group-head .count { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 6px; }
+  tr.group-row td:first-child { padding-left: 28px; }
+  tr.group-row .listing-name { color: var(--muted); font-size: 13px; }
+  tr.group-head .best { float: right; color: var(--gold); font-size: 13px; }
+  .cheapest { color: var(--gold); font-size: 11px; font-weight: 700; margin-left: 6px; text-transform: uppercase; }
+  .method { color: var(--muted); font-size: 11px; margin-left: 6px; }
   .out-of-stock { color: var(--danger); font-size: 12px; }
   @media (max-width: 640px) {
     table, thead, tbody, th, td, tr { display: block; }
@@ -108,6 +117,7 @@
     <option value="none">N/A</option>
   </select>
   <label class="checkbox"><input id="hideOOS" type="checkbox" checked> Hide out of stock</label>
+  <label class="checkbox"><input id="groupBy" type="checkbox" checked> Group same kit across shops</label>
 </div>
 <main>
   <div id="status"></div>
@@ -125,6 +135,7 @@
   var shopSelect = document.getElementById('shop');
   var gradeSelect = document.getElementById('grade');
   var hideOOSCheckbox = document.getElementById('hideOOS');
+  var groupByCheckbox = document.getElementById('groupBy');
   var statusEl = document.getElementById('status');
   var rowsEl = document.getElementById('rows');
   var debounceTimer = null;
@@ -151,6 +162,48 @@
         shopSelect.appendChild(opt);
       });
     }).catch(function () { /* shop list is a convenience, search still works without it */ });
+  }
+
+  function rowHTML(row, cls, extra) {
+    var atLow = row.current_price_cents <= row.lowest_price_cents;
+    var outOfStock = row.availability === 'out_of_stock';
+    var preorder = row.availability === 'preorder';
+    return '<tr' + (cls ? ' class="' + cls + '"' : '') + '>' +
+      '<td data-label="Set"><a class="name" href="' + row.url.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener">' + escapeHTML(row.name) + (row.grade ? ' <span class="shop">(' + escapeHTML(row.grade) + ')</span>' : '') + '</a>' +
+        (outOfStock ? '<br><span class="out-of-stock">Out of stock</span>' : '') + (preorder ? '<br><span class="shop">Pre-order</span>' : '') + '</td>' +
+      '<td data-label="Shop">' + escapeHTML(row.shop_name) + '</td>' +
+      '<td data-label="Current price"><span class="price-current' + (atLow ? ' at-low' : '') + '">' + formatPrice(row.current_price_cents, row.currency) + '</span>' + (extra || '') + '</td>' +
+      '<td data-label="Lowest recorded"><span class="price-lowest">' + formatPrice(row.lowest_price_cents, row.currency) + '</span></td>' +
+      '</tr>';
+  }
+
+  // "from €X at Shop" for a kit's cheapest listing(s).
+  function bestHTML(p) {
+    var best = p.listings.filter(function (l) { return l.cheapest; });
+    if (best.length === 0) return '';
+    return '<span class="best">from ' + formatPrice(best[0].current_price_cents, best[0].currency) + ' at ' +
+      best.map(function (l) { return escapeHTML(l.shop_name); }).join(' / ') + '</span>';
+  }
+
+  function renderProducts(products) {
+    if (products.length === 0) {
+      rowsEl.innerHTML = '';
+      statusEl.textContent = 'No sets match.';
+      return;
+    }
+    var multi = products.filter(function (p) { return p.listings.length > 1; }).length;
+    statusEl.textContent = products.length + ' kit' + (products.length === 1 ? '' : 's') + ', ' + multi + ' sold by more than one listing';
+    rowsEl.innerHTML = products.map(function (p) {
+      if (p.listings.length === 1) return rowHTML(p.listings[0], '');
+      var head = '<tr class="group-head"><td colspan="4">' + escapeHTML(p.name) +
+        (p.grade ? ' <span class="shop">(' + escapeHTML(p.grade) + ')</span>' : '') +
+        '<span class="count">' + p.listings.length + ' listings</span>' + bestHTML(p) + '</td></tr>';
+      return head + p.listings.map(function (l) {
+        var tag = l.cheapest ? '<span class="cheapest">cheapest</span>' : '';
+        var how = l.match_method ? '<span class="method" title="how this listing was matched">' + escapeHTML(l.match_method) + '</span>' : '';
+        return rowHTML(l, 'group-row', tag).replace('</a>', '</a>' + how);
+      }).join('');
+    }).join('');
   }
 
   function render(rows) {
@@ -186,7 +239,7 @@
     statusEl.textContent = 'Searching…';
     reInput.setCustomValidity('');
 
-    fetch('/api/search?' + params.toString()).then(function (r) {
+    fetch((groupByCheckbox.checked ? '/api/products?' : '/api/search?') + params.toString()).then(function (r) {
       return r.json().then(function (body) { return { ok: r.ok, body: body }; });
     }).then(function (result) {
       if (requestID !== currentRequest) return; // a newer request superseded this one
@@ -196,7 +249,7 @@
         rowsEl.innerHTML = '';
         return;
       }
-      render(result.body);
+      (groupByCheckbox.checked ? renderProducts : render)(result.body);
     }).catch(function (err) {
       if (requestID !== currentRequest) return;
       statusEl.textContent = 'Error: ' + err.message;
@@ -213,6 +266,7 @@
   shopSelect.addEventListener('change', search);
   gradeSelect.addEventListener('change', search);
   hideOOSCheckbox.addEventListener('change', search);
+  groupByCheckbox.addEventListener('change', search);
 
   loadShops();
   search();

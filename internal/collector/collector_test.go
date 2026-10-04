@@ -227,3 +227,29 @@ func TestRun_ForceBypassesSanityGuard(t *testing.T) {
 		t.Errorf("forced run record = %+v, want status=success setsFound=10", r)
 	}
 }
+
+// Accessories, figures and other product lines are not tracked: they never
+// reach the store, and the recorded set count excludes them.
+func TestRun_SkipsNonKits(t *testing.T) {
+	db := newFakeStore()
+	shop := store.Shop{ID: 1, Slug: "fake"}
+	sets := mkSets(2)
+	sets = append(sets,
+		scraper.ScrapedSet{ExternalID: "base", Name: "PG Action Base (Black)", Grade: "PG", PriceCents: 1500, Currency: "EUR"},
+		scraper.ScrapedSet{ExternalID: "fig", Name: "Figure-Rise Standard – Avatar Fumina", Grade: "HG", PriceCents: 2500, Currency: "EUR"},
+		scraper.ScrapedSet{ExternalID: "jabber", Name: "HG Type89 Base Jabber 1/144", Grade: "HG", PriceCents: 2000, Currency: "EUR"},
+	)
+
+	if err := Run(context.Background(), db, shop, &fakeScraper{sets: sets}, discardLogger(), Options{}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if db.upsertCalls != 3 {
+		t.Errorf("upserted %d sets, want 3 (2 kits + Base Jabber; Action Base and Figure-Rise dropped)", db.upsertCalls)
+	}
+	if _, ok := db.setIDByExtID["base"]; ok {
+		t.Error("Action Base was stored")
+	}
+	if db.runs[1].setsFound != 3 {
+		t.Errorf("sets_found = %d, want 3", db.runs[1].setsFound)
+	}
+}

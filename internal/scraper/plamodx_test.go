@@ -25,6 +25,10 @@ func TestPlamoDX_FetchAll(t *testing.T) {
 			w.Write([]byte(`[
 				{"id": 201, "name": "HG &#8211; One", "permalink": "https://plamodx.nl/product/hg-one/", "sku": "", "is_in_stock": true, "prices": {"price": "1999", "currency_minor_unit": 2}}
 			]`))
+		case cat == "mgex" && page == "1":
+			w.Write([]byte(`[
+				{"id": 301, "name": "MGEX &#8211; Strike", "permalink": "https://plamodx.nl/product/mgex-strike/", "sku": "", "is_in_stock": true, "prices": {"price": "16499", "currency_minor_unit": 2}}
+			]`))
 		default:
 			w.Write([]byte(`[]`))
 		}
@@ -43,8 +47,8 @@ func TestPlamoDX_FetchAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchAll: %v", err)
 	}
-	if len(sets) != 3 {
-		t.Fatalf("got %d sets, want 3", len(sets))
+	if len(sets) != 4 {
+		t.Fatalf("got %d sets, want 4", len(sets))
 	}
 
 	byID := map[string]ScrapedSet{}
@@ -75,6 +79,11 @@ func TestPlamoDX_FetchAll(t *testing.T) {
 	}
 	if two.PriceCents != 5499 {
 		t.Errorf("set 102 price = %d, want 5499", two.PriceCents)
+	}
+
+	// MGEX lives in its own category but is filed as MG.
+	if mgex := byID["301"]; mgex.Grade != "MG" || mgex.PriceCents != 16499 {
+		t.Errorf("set 301 = %+v, want an MG-graded MGEX kit at 16499", mgex)
 	}
 
 	hgOne := byID["201"]

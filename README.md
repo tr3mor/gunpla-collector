@@ -37,6 +37,10 @@ uses can't get past.
   a broken scraper, not a mass removal) unless `--force` (or
   `GUNPLA_FORCE=1`) is set — use that after confirming by hand that a shop
   genuinely shrank its catalog.
+  Listings that aren't model kits (Figure-Rise figures, Action Bases,
+  expansion/effect/weapon parts sets, 30MM, the Gundam Assemble card game,
+  SD/MGSD, ...) are skipped, whichever grade category a shop files them
+  under; see `scraper.IsKit`.
 - `gunpla-collector report [--shop=geeksheaven]` diffs the latest
   successful collect run against the last one it already reported on, and
   sends a Telegram message: new sets, removed sets, and price changes.
@@ -55,6 +59,21 @@ uses can't get past.
   to the listing. It's read-only and has no authentication — run it on a
   trusted network only. `--addr` defaults to `$GUNPLA_UI_ADDR`, or
   `:8080` if that's unset too.
+- `gunpla-collector match` groups listings of the same kit across shops
+  into *products*, so one search shows every shop's price for it. `collect`
+  runs it automatically as its last step (so `report` and the UI always see
+  fresh groups); a matching failure is logged but never fails the collect.
+  Run it by hand only to re-group after `link`/`unlink` or a matcher change.
+  It only reads the database — no network. A listing joins a product when it shares a
+  barcode (EAN) with it, or when its normalised name does: same grade,
+  same model number (RX-78-2), same variant words (Ver.Ka, Clear, Custom,
+  Premium Bandai, ...), and enough overlapping words. Two listings from one
+  shop are never merged. Near-misses are printed instead of linked; fix a
+  wrong or missed grouping by hand with `link <a> <b>` / `unlink <id>`
+  (ids as shown in the `match` output) — manual choices are never
+  overwritten. The search UI groups by product by default (untick "Group
+  same kit across shops" for the flat list). Only GeeksHeaven currently
+  exposes EANs, so most matching is by name.
 - Both `collect` and `report` default to running against every active shop in the database when
   `--shop` is omitted and `GUNPLA_SHOPS` is unset — restricted to shops
   that still have a scraper registered in this binary, so retiring a shop
@@ -101,6 +120,7 @@ Environment variables:
 | `GUNPLA_RUN_TIMEOUT`           | `30m` (collect) / `5m` (report) | whole-run timeout, Go duration string e.g. `45m` |
 | `GUNPLA_FORCE`                 | unset (false)       | collect only: equivalent to `--force`, for use from `docker compose exec` |
 | `GUNPLA_UI_ADDR`               | `:8080`             | serve only: address to listen on                          |
+| `GUNPLA_USD_EUR_RATE`          | `0.89`              | serve/report: fallback USD→EUR rate, used only if the live rate (fetched at startup from frankfurter.dev, ECB data) is unreachable |
 
 ## Running locally
 
