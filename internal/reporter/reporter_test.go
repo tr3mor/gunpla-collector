@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"gunpla-collector/internal/fx"
 	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
 )
@@ -244,5 +245,32 @@ func TestRun_RecentlyRunningIsNotStuck(t *testing.T) {
 	}
 	if len(sender.sent) != 0 {
 		t.Errorf("sent = %v, want no alert for a run that just started", sender.sent)
+	}
+}
+
+func TestRun_ConvertsUSDToEUR(t *testing.T) {
+	current := successRun(2)
+	db := &fakeStore{
+		latest:      current,
+		current:     current,
+		previous:    successRun(1),
+		newSets:     []store.ReportItem{{Name: "US Kit", PriceCents: 10000, Currency: "USD"}, {Name: "NL Kit", PriceCents: 5000, Currency: "EUR"}},
+		removedSets: []store.ReportItem{{Name: "Old US Kit", PriceCents: 2000, Currency: "USD"}},
+		changes:     []store.PriceChange{{Name: "Dropped", OldCents: 10000, NewCents: 8000, Currency: "USD"}},
+	}
+	sender := &fakeSender{}
+	shop := store.Shop{ID: 1, Slug: "gundamstore", Name: "Gundam Store"}
+
+	if err := Run(context.Background(), db, shop, sender, discardLogger(), WithEURRates(fx.Rates{"USD": 0.9})); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	msg := sender.sent[0]
+	for _, want := range []string{"US Kit — €90.00", "NL Kit — €50.00", "last seen €18.00", "€90.00 → €72.00 (-20.0%)"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message missing %q:\n%s", want, msg)
+		}
+	}
+	if strings.Contains(msg, "$") {
+		t.Errorf("message still shows USD:\n%s", msg)
 	}
 }

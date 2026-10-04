@@ -9,6 +9,9 @@ services:
       # Set in .env to restrict to specific shops, e.g.
       # GUNPLA_SHOPS=geeksheaven,gundamstore. Empty means "all" (see README).
       GUNPLA_SHOPS: ${GUNPLA_SHOPS:-}
+      # Fallback USD->EUR rate for reports; today's rate is fetched at
+      # startup and this is used only if that lookup fails.
+      GUNPLA_USD_EUR_RATE: "${GUNPLA_USD_EUR_RATE:-}"
     volumes:
       - gunpla-data:/data
 
@@ -27,6 +30,7 @@ services:
     environment:
       GUNPLA_DB_PATH: /data/gunpla.db
       GUNPLA_UI_ADDR: ":8080"
+      GUNPLA_USD_EUR_RATE: "${GUNPLA_USD_EUR_RATE:-}"
     ports:
       - "${GUNPLA_UI_PORT:-8080}:8080"
     volumes:

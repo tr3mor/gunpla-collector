@@ -10,6 +10,7 @@ import (
 	"math"
 	"time"
 
+	"gunpla-collector/internal/fx"
 	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
 	"gunpla-collector/internal/telegram"
@@ -43,7 +44,21 @@ type Store interface {
 	PriceChanges(ctx context.Context, shopID, currentRunID, previousRunID int64) ([]store.PriceChange, error)
 }
 
-func Run(ctx context.Context, db Store, shop store.Shop, sender telegram.Sender, logger *slog.Logger) error {
+// Option configures Run.
+type Option func(*options)
+
+type options struct{ rates fx.Rates }
+
+// WithEURRates makes the report show prices in other currencies (Gundam
+// Store's USD) converted to EUR.
+func WithEURRates(r fx.Rates) Option { return func(o *options) { o.rates = r } }
+
+func Run(ctx context.Context, db Store, shop store.Shop, sender telegram.Sender, logger *slog.Logger, opts ...Option) error {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+
 	latest, ok, err := db.LatestRun(ctx, shop.ID)
 	if err != nil {
 		return fmt.Errorf("find latest run: %w", err)
@@ -93,6 +108,7 @@ func Run(ctx context.Context, db Store, shop store.Shop, sender telegram.Sender,
 		if err != nil {
 			return fmt.Errorf("query price changes: %w", err)
 		}
+		newSets, removedSets, changes = convertItems(o.rates, newSets), convertItems(o.rates, removedSets), convertChanges(o.rates, changes)
 		reportableChanges := filterReportableChanges(changes)
 		logger.Info("reporting diff", "shop", shop.Slug, "new", len(newSets), "removed", len(removedSets),
 			"changed", len(reportableChanges), "changed_filtered_out", len(changes)-len(reportableChanges))
@@ -108,6 +124,27 @@ func Run(ctx context.Context, db Store, shop store.Shop, sender telegram.Sender,
 		return fmt.Errorf("mark reported: %w", err)
 	}
 	return nil
+}
+
+func convertItems(r fx.Rates, items []store.ReportItem) []store.ReportItem {
+	for i := range items {
+		if cents, ok := r.ToEUR(items[i].PriceCents, items[i].Currency); ok {
+			items[i].PriceCents, items[i].Currency = cents, "EUR"
+		}
+	}
+	return items
+}
+
+func convertChanges(r fx.Rates, changes []store.PriceChange) []store.PriceChange {
+	for i := range changes {
+		old, ok := r.ToEUR(changes[i].OldCents, changes[i].Currency)
+		if !ok {
+			continue
+		}
+		changes[i].NewCents, _ = r.ToEUR(changes[i].NewCents, changes[i].Currency)
+		changes[i].OldCents, changes[i].Currency = old, "EUR"
+	}
+	return changes
 }
 
 // filterReportableChanges drops price changes that aren't worth alerting

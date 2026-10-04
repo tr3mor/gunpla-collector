@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"gunpla-collector/internal/fx"
 	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
 )
@@ -221,5 +222,106 @@ func TestHandleSearch_GradeFilter(t *testing.T) {
 	}
 	if got := names("grade=PG"); len(got) != 0 {
 		t.Errorf("grade=PG = %v, want none", got)
+	}
+}
+
+func TestHandleProducts_GroupsListingsAndMarksCheapest(t *testing.T) {
+	s, fs := newTestServer()
+	fs.rows = []store.SetSearchRow{
+		{SetID: 1, ProductID: 7, ProductName: "RX-78-2 Gundam", ShopSlug: "shop-a", ShopName: "Shop A", Name: "MG RX-78-2 Gundam Ver.Ka 1/100", Grade: "MG", URL: "https://a/1", CurrentCents: 9000, Currency: "EUR", LowestCents: 9000, MatchMethod: "name"},
+		{SetID: 2, ProductID: 7, ProductName: "RX-78-2 Gundam", ShopSlug: "shop-b", ShopName: "Shop B", Name: "MG – RX-78-2 Gundam Ver.Ka", Grade: "MG", URL: "https://b/1", CurrentCents: 8500, Currency: "EUR", LowestCents: 8000, MatchMethod: "name"},
+		{SetID: 3, ProductID: 7, ProductName: "RX-78-2 Gundam", ShopSlug: "shop-c", ShopName: "Shop C", Name: "RX-78-2 Gundam Ver.Ka", Grade: "MG", URL: "https://c/1", CurrentCents: 7000, Currency: "EUR", Availability: scraper.AvailabilityOutOfStock, LowestCents: 7000, MatchMethod: "name"},
+		{SetID: 4, ProductID: 8, ProductName: "Zaku II", ShopSlug: "shop-a", ShopName: "Shop A", Name: "HG Zaku II", Grade: "HG", URL: "https://a/2", CurrentCents: 2000, Currency: "EUR", LowestCents: 2000},
+		{SetID: 5, ShopSlug: "shop-a", ShopName: "Shop A", Name: "Unmatched Kit", Grade: "HG", URL: "https://a/3", CurrentCents: 1000, Currency: "EUR", LowestCents: 1000},
+	}
+	get := func(query string) []productJSON {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/products"+query, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d; body: %s", rec.Code, rec.Body.String())
+		}
+		var out []productJSON
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+
+	got := get("?show_out_of_stock=1")
+	if len(got) != 3 {
+		t.Fatalf("got %d products, want 3 (grouped, plus 2 singles)", len(got))
+	}
+	if got[0].ProductID != 7 || len(got[0].Listings) != 3 {
+		t.Fatalf("multi-shop product should sort first with 3 listings: %+v", got[0])
+	}
+	for _, l := range got[0].Listings {
+		// The out-of-stock €70 listing is cheaper but can't be bought.
+		if want := l.ShopSlug == "shop-b"; l.Cheapest != want {
+			t.Errorf("%s: cheapest = %v, want %v", l.ShopSlug, l.Cheapest, want)
+		}
+	}
+
+	// Default hides out-of-stock listings, shrinking the group.
+	if got := get(""); len(got[0].Listings) != 2 {
+		t.Errorf("default view has %d listings in group, want 2", len(got[0].Listings))
+	}
+	// A name filter keeps the whole product if one listing matches.
+	if got := get("?q=zaku"); len(got) != 1 || got[0].ProductID != 8 {
+		t.Errorf("q=zaku: %+v", got)
+	}
+	// A bad regexp is a 400, same as /api/search.
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/products?regexp=%28", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("bad regexp: status = %d, want 400", rec.Code)
+	}
+}
+
+func TestHandleProducts_ConvertsToEURAndComparesAcrossCurrencies(t *testing.T) {
+	s, fs := newTestServer()
+	s.eurRates = fx.Rates{"USD": 0.9}
+	fs.rows = []store.SetSearchRow{
+		// $100 = €90: cheaper than the €95 listing despite the bigger number.
+		{SetID: 1, ProductID: 7, ShopSlug: "us", ShopName: "US", Name: "Kit", URL: "u1", CurrentCents: 10000, LowestCents: 9000, Currency: "USD"},
+		{SetID: 2, ProductID: 7, ShopSlug: "nl", ShopName: "NL", Name: "Kit", URL: "u2", CurrentCents: 9500, LowestCents: 9500, Currency: "EUR"},
+		// One shop only: nothing to compare, so no cheapest flag.
+		{SetID: 3, ProductID: 8, ShopSlug: "us", ShopName: "US", Name: "Solo", URL: "u3", CurrentCents: 1000, LowestCents: 1000, Currency: "USD"},
+	}
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/products", nil))
+	var got []productJSON
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d products, want 2", len(got))
+	}
+	for _, l := range got[0].Listings {
+		if l.Currency != "EUR" {
+			t.Errorf("%s: currency = %q, want EUR", l.ShopSlug, l.Currency)
+		}
+		if l.ShopSlug == "us" {
+			if l.CurrentCents != 9000 || l.LowestCents != 8100 || l.OriginalCents != 10000 || l.OriginalCurrency != "USD" {
+				t.Errorf("converted listing = %+v", l)
+			}
+		}
+		if want := l.ShopSlug == "us"; l.Cheapest != want {
+			t.Errorf("%s: cheapest = %v, want %v", l.ShopSlug, l.Cheapest, want)
+		}
+	}
+	if solo := got[1].Listings[0]; solo.Cheapest || solo.CurrentCents != 900 {
+		t.Errorf("single-shop kit: %+v (want EUR 9.00, not cheapest)", solo)
+	}
+}
+
+func TestHandleSearch_ConvertsToEUR(t *testing.T) {
+	s, _ := newTestServer()
+	s.eurRates = fx.Rates{"USD": 0.5}
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/search?q=nu", nil))
+	got := decodeSearch(t, rec.Body.Bytes())
+	if len(got) != 1 || got[0].Currency != "EUR" || got[0].CurrentCents != 1500 {
+		t.Errorf("got %+v, want the $30.00 Nu Gundam as EUR 15.00", got)
 	}
 }

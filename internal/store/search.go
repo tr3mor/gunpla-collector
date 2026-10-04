@@ -11,6 +11,12 @@ import (
 // current price (its most recent price_history row) plus the lowest price
 // ever recorded for it, regardless of when.
 type SetSearchRow struct {
+	SetID int64
+	// ProductID groups listings of the same kit across shops; 0 until
+	// `match` has run.
+	ProductID    int64
+	ProductName  string
+	MatchMethod  string
 	ShopSlug     string
 	ShopName     string
 	Name         string
@@ -30,11 +36,13 @@ type SetSearchRow struct {
 // Go avoids needing a SQLite regexp extension.
 func (s *Store) SearchSets(ctx context.Context, shopSlug string) ([]SetSearchRow, error) {
 	query := `
-		SELECT sh.slug, sh.name, s.name, COALESCE(s.grade, ''), s.url,
+		SELECT s.id, COALESCE(s.product_id, 0), COALESCE(p.name, ''), COALESCE(s.match_method, ''),
+		       sh.slug, sh.name, s.name, COALESCE(s.grade, ''), s.url,
 		       cur.price_cents, cur.currency, COALESCE(cur.availability, ''), cur.scraped_at,
 		       low.min_price
 		FROM sets s
 		JOIN shops sh ON sh.id = s.shop_id
+		LEFT JOIN products p ON p.id = s.product_id
 		JOIN (
 			SELECT set_id, price_cents, currency, availability, scraped_at
 			FROM price_history
@@ -62,7 +70,7 @@ func (s *Store) SearchSets(ctx context.Context, shopSlug string) ([]SetSearchRow
 	var results []SetSearchRow
 	for rows.Next() {
 		var r SetSearchRow
-		if err := rows.Scan(&r.ShopSlug, &r.ShopName, &r.Name, &r.Grade, &r.URL,
+		if err := rows.Scan(&r.SetID, &r.ProductID, &r.ProductName, &r.MatchMethod, &r.ShopSlug, &r.ShopName, &r.Name, &r.Grade, &r.URL,
 			&r.CurrentCents, &r.Currency, &r.Availability, &r.ScrapedAt, &r.LowestCents); err != nil {
 			return nil, fmt.Errorf("scan search row: %w", err)
 		}
