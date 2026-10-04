@@ -4,209 +4,83 @@ Tracks Gunpla model kit inventory and prices at online shops over time,
 sends a daily Telegram summary of what's new, removed, or changed price,
 and serves a small web UI for searching the current catalog.
 
-Currently supports:
-- [GeeksHeaven](https://www.geeksheaven.nl/gundam-model-kits/) (MG, HG, RG,
-  PG grades, prices in EUR)
-- [Gundam Store](https://gundam-store.com/collections/mg-master-grade) (MG,
-  HG, RG, PG grades, prices in USD)
-- [PlamoDX](https://plamodx.nl/product-category/gunpla/) (MG, HG, RG, PG
-  grades, prices in EUR)
-- [Zeonmarket](https://www.zeonmarket.nl/MG) (MG, HG, RG, PG grades plus
-  its [pre-order list](https://www.zeonmarket.nl/Pre-orders), prices in EUR)
+Supported shops:
+- [GeeksHeaven](https://www.geeksheaven.nl/gundam-model-kits/)
+- [Gundam Store](https://gundam-store.com/collections/mg-master-grade)
+- [PlamoDX](https://plamodx.nl/product-category/gunpla/)
+- [Zeonmarket](https://www.zeonmarket.nl/MG) (including pre-orders)
 
-More shops can be added by implementing the `scraper.Scraper` interface —
-see `internal/scraper/geeksheaven.go` (Lightspeed eCom JSON API),
-`internal/scraper/gundamstore.go` (Shopify `products.json` API), or
-`internal/scraper/plamodx.go` (WooCommerce Store REST API), or
-`internal/scraper/zeonmarket.go` (server-rendered HTML, for shops with no
-API) as templates. All four embed the shared rate-limited, size-capped client in
-`internal/scraper/http.go`, so a new scraper only needs its own URL
-construction and response-shape structs.
+## Commands
 
-`tf-robots.nl` was evaluated and skipped: the entire site sits behind a
-Cloudflare managed JS challenge (every path but its category-only RSS feed
-returns a "Just a moment..." 403), which the plain HTTP client this project
-uses can't get past.
+| Command | What it does |
+|---------|--------------|
+| `collect [--shop=<slug>] [--force]` | Fetch each shop's current catalog and store a price snapshot. Refuses a run that drops more than half the catalog unless `--force` is given. |
+| `report [--shop=<slug>]` | Send a Telegram message with new, removed, and re-priced sets (plus newly opened pre-orders) since the last report. Warns if the latest `collect` failed. |
+| `serve [--addr=:8080]` | Serve a read-only search UI over the database. No authentication — trusted networks only. |
+| `match` | Group the same kit across shops into products. Runs automatically at the end of `collect`. |
+| `link <a> <b>` / `unlink <id>` | Manually fix a wrong or missed grouping. |
 
-## How it works
-
-- `gunpla-collector collect [--shop=geeksheaven] [--force]` fetches the
-  current catalog (name, price, stock) from each shop's category listing
-  JSON API and stores a snapshot, keeping full price history. A run
-  returning under half the previous run's set count is refused (treated as
-  a broken scraper, not a mass removal) unless `--force` (or
-  `GUNPLA_FORCE=1`) is set — use that after confirming by hand that a shop
-  genuinely shrank its catalog.
-  Listings that aren't model kits (Figure-Rise figures, Action Bases,
-  expansion/effect/weapon parts sets, 30MM, the Gundam Assemble card game,
-  SD/MGSD, ...) are skipped, whichever grade category a shop files them
-  under; see `scraper.IsKit`.
-- `gunpla-collector report [--shop=geeksheaven]` diffs the latest
-  successful collect run against the last one it already reported on, and
-  sends a Telegram message: new sets, removed sets, and price changes.
-  It's idempotent — running it again before the next `collect` finds
-  nothing new and sends nothing. If the most recent `collect` run failed
-  (or crashed without recording a failure), it sends a warning instead,
-  every time `report` runs, until a `collect` succeeds again.
-  Price changes are filtered before reporting: a set currently out of stock
-  is dropped (its price isn't something anyone can act on), and moves under
-  5% are dropped as noise (some shops show small run-to-run swings that
-  look like currency-conversion rounding rather than a real price change).
-- `gunpla-collector serve [--addr=:8080]` serves a search UI over the same
-  database: a text search (case-insensitive substring) plus an optional
-  regexp filter on set name, and a shop filter. Each result shows the
-  set's current price, the lowest price ever recorded for it, and a link
-  to the listing. It's read-only and has no authentication — run it on a
-  trusted network only. `--addr` defaults to `$GUNPLA_UI_ADDR`, or
-  `:8080` if that's unset too.
-- `gunpla-collector match` groups listings of the same kit across shops
-  into *products*, so one search shows every shop's price for it. `collect`
-  runs it automatically as its last step (so `report` and the UI always see
-  fresh groups); a matching failure is logged but never fails the collect.
-  Run it by hand only to re-group after `link`/`unlink` or a matcher change.
-  It only reads the database — no network. A listing joins a product when it shares a
-  barcode (EAN) with it, or when its normalised name does: same grade,
-  same model number (RX-78-2), same variant words (Ver.Ka, Clear, Custom,
-  Premium Bandai, ...), and enough overlapping words. Two listings from one
-  shop are never merged. Near-misses are printed instead of linked; fix a
-  wrong or missed grouping by hand with `link <a> <b>` / `unlink <id>`
-  (ids as shown in the `match` output) — manual choices are never
-  overwritten. The search UI groups by product by default (untick "Group
-  same kit across shops" for the flat list). EANs come from GeeksHeaven's
-  listing API and from Gundam Store's per-product endpoint (its listing
-  leaves them out, so `collect` looks each set up once — about 20 minutes
-  the first time — and re-checks a set with no barcode after 30 days).
-  PlamoDX and Zeonmarket expose none, so their listings match by name.
-- Both `collect` and `report` default to running against every active shop in the database when
-  `--shop` is omitted and `GUNPLA_SHOPS` is unset — restricted to shops
-  that still have a scraper registered in this binary, so retiring a shop
-  from the code stops it from being collected/reported without also
-  needing a DB change.
-- Flags accept both `--name=value` and `--name value` (and single-dash
-  `-name`), and `--help`/`-h` prints usage.
-
-GeeksHeaven runs on Lightspeed eCom (Shoplightspeed), whose storefront
-supports a `?format=json` API on every category page. Gundam Store runs on
-Shopify, whose storefront exposes the same collection-page data as JSON via
-`/collections/<handle>/products.json`. PlamoDX runs on WooCommerce, whose
-public Store REST API (`/wp-json/wc/store/v1/products`) needs no
-authentication. Those three scrapers read JSON directly. Zeonmarket runs
-on CCV Shop, which has no JSON API, so its scraper parses the
-server-rendered category pages (`/MG?page=N`, 12 products per page, until
-an empty page); no headless browser is needed for any shop.
-
-Each price record carries an availability (`in_stock`, `out_of_stock`,
-`preorder`, or unknown). Newly opened pre-orders are reported in their own
-"Pre-orders opened" section of the daily Telegram report.
+Without `--shop`, commands run against every active shop. Run any command
+with `--help` for details.
 
 ## Telegram bot setup
 
-1. In Telegram, message **@BotFather** → `/newbot` → follow the prompts →
-   copy the **bot token** it gives you (looks like
-   `123456789:ABCdefGhIJKlmnoPQRstuVWXyz`).
-2. Message your new bot anything (e.g. "hi") so it can see you.
-3. Visit `https://api.telegram.org/bot<TOKEN>/getUpdates` in a browser and
-   read `message.chat.id` from the JSON response — that's your **chat ID**.
-4. Put both values in `.env` (copy `.env.example`) or your environment —
-   see Configuration below.
+1. Message **@BotFather** → `/newbot` and copy the **bot token**.
+2. Send your new bot any message.
+3. Open `https://api.telegram.org/bot<TOKEN>/getUpdates` and read
+   `message.chat.id` — that's your **chat ID**.
+4. Put both in `.env` (copy `.env.example`).
 
 ## Configuration
 
-Environment variables:
-
-| Variable                     | Default            | Notes                                                    |
-|-------------------------------|---------------------|-----------------------------------------------------------|
-| `GUNPLA_DB_PATH`               | `/data/gunpla.db`  | SQLite file path — must be on a mounted volume in Docker |
-| `GUNPLA_TELEGRAM_BOT_TOKEN`    | —                   | required for `report`                                    |
-| `GUNPLA_TELEGRAM_CHAT_ID`      | —                   | required for `report`                                    |
-| `GUNPLA_SHOPS`                 | (all active shops) | comma-separated slugs, e.g. `geeksheaven,gundamstore,plamodx,zeonmarket` |
-| `GUNPLA_RUN_TIMEOUT`           | `60m` (collect) / `5m` (report) | whole-run timeout, Go duration string e.g. `45m` |
-| `GUNPLA_FORCE`                 | unset (false)       | collect only: equivalent to `--force`, for use from `docker compose exec` |
-| `GUNPLA_UI_ADDR`               | `:8080`             | serve only: address to listen on                          |
-| `GUNPLA_USD_EUR_RATE`          | `0.89`              | serve/report: fallback USD→EUR rate, used only if the live rate (fetched at startup from frankfurter.dev, ECB data) is unreachable |
-
-## Running locally
-
-```sh
-go build -o gunpla-collector ./cmd/gunpla-collector
-GUNPLA_DB_PATH=./gunpla.db ./gunpla-collector collect --shop=geeksheaven
-
-GUNPLA_DB_PATH=./gunpla.db \
-GUNPLA_TELEGRAM_BOT_TOKEN=... \
-GUNPLA_TELEGRAM_CHAT_ID=... \
-./gunpla-collector report --shop=geeksheaven
-
-GUNPLA_DB_PATH=./gunpla.db ./gunpla-collector serve --addr=:8080
-# then open http://localhost:8080
-```
-
-Inspect the database directly:
-
-```sh
-sqlite3 ./gunpla.db "select count(*) from sets where is_active=1"
-sqlite3 ./gunpla.db "select name, price_cents from price_history order by id desc limit 5"
-```
+| Variable                    | Default                         | Notes                                          |
+|-----------------------------|---------------------------------|------------------------------------------------|
+| `GUNPLA_DB_PATH`            | `/data/gunpla.db`               | SQLite file path                               |
+| `GUNPLA_TELEGRAM_BOT_TOKEN` | —                               | required for `report`                          |
+| `GUNPLA_TELEGRAM_CHAT_ID`   | —                               | required for `report`                          |
+| `GUNPLA_SHOPS`              | all active shops                | comma-separated slugs, e.g. `geeksheaven,plamodx` |
+| `GUNPLA_RUN_TIMEOUT`        | `60m` (collect) / `5m` (report) | Go duration string                             |
+| `GUNPLA_FORCE`              | unset                           | same as `collect --force`                      |
+| `GUNPLA_UI_ADDR`            | `:8080`                         | `serve` listen address                         |
+| `GUNPLA_USD_EUR_RATE`       | `0.89`                          | fallback rate if the live ECB rate is unreachable |
 
 ## Running with Docker
 
 ```sh
 cp .env.example .env   # fill in your bot token + chat id
-docker compose up -d   # pulls ghcr.io/tr3mor/gunpla-collector:latest
+docker compose up -d
 ```
 
-Set `GUNPLA_IMAGE_TAG` in `.env` to pin a specific release (e.g. `0.1.0`)
-instead of always tracking `latest`; see [Releases](https://github.com/tr3mor/gunpla-collector/releases)
-for available versions. To build from source instead of pulling, run
-`docker compose build` first, or add `build: .` back to `docker-compose.yml`.
+This runs `collect` at 18:00 and `report` at 18:15 daily (Europe/Amsterdam)
+via cron inside the container, and serves the search UI at
+`http://localhost:8080` (`GUNPLA_UI_PORT` to change). Set
+`GUNPLA_IMAGE_TAG` to pin a [release](https://github.com/tr3mor/gunpla-collector/releases).
 
-This also starts a `gunpla-ui` container serving the search UI at
-`http://localhost:8080` (change the published port with `GUNPLA_UI_PORT` in
-`.env`). It's a separate container from the cron job so it can be
-restarted independently, reads the same SQLite file over the shared
-`gunpla-data` volume, and has no authentication — it's meant for a
-trusted network (LAN/VPN), not the open internet.
-
-Cron runs *inside* the `gunpla-collector` container (busybox `crond` as PID 1, see
-`crontab` and `docker-entrypoint.sh`): `collect` at 18:00, `report` at
-18:15, daily, both in Europe/Amsterdam local time (baked into the image, so
-it stays correct across the CET/CEST switch). The SQLite file lives on the
-`gunpla-data` named volume so it survives rebuilds.
-
-This always-on/internal-cron model assumes the host is up 24/7. For a
-machine that isn't (e.g. a home PC), see [`windows/README.md`](windows/README.md)
-for a login-triggered alternative instead.
-
-`report` sends a "No changes today." message when there's something new to
-report but nothing in it actually changed; it sends nothing at all when
-there's nothing new to report (e.g. run it twice in a row). If `collect`
-failed, `report` sends a warning instead — see "How it works" above.
-
-To trigger a run manually without waiting for cron:
+To run manually:
 
 ```sh
-docker compose exec gunpla-collector gunpla-collector collect --shop=geeksheaven
-docker compose exec gunpla-collector gunpla-collector report --shop=geeksheaven
+docker compose exec gunpla-collector gunpla-collector collect
+docker compose exec gunpla-collector gunpla-collector report
 ```
 
-## Testing
+For a machine that isn't on 24/7, see [`windows/README.md`](windows/README.md).
+
+## Running locally
+
+```sh
+go build -o gunpla-collector ./cmd/gunpla-collector
+export GUNPLA_DB_PATH=./gunpla.db
+./gunpla-collector collect
+./gunpla-collector serve   # http://localhost:8080
+```
+
+## Development
 
 ```sh
 go test ./...
 ```
 
-Covers price parsing (string and float→cents), the GeeksHeaven, Gundam
-Store, PlamoDX, and Zeonmarket pagination/grade-filtering logic (against a
-local `httptest` server, no network), the new/removed/price-change diff
-logic and Telegram message formatting including per-shop currency symbols
-(synthetic data),
-the sanity guard that stops a broken scrape from being interpreted as mass
-removal, the report idempotency logic (unreported-run tracking, skipping
-already-reported runs, alerting on a failed or stuck collect run), and —
-against a real temporary SQLite file — the atomic collect-run transaction
-(`store.ApplyRun`), foreign-key enforcement, and schema migrations. Also
-covers the search UI's JSON API (substring/regexp/shop filtering, current
-vs. lowest price selection, invalid-regexp handling).
-
-CI (`.github/workflows/ci.yml`) runs `go vet`, `go test -race`, and
-[golangci-lint](https://golangci-lint.run/) (config in `.golangci.yml`) on
-every push and PR against `main`.
+To add a shop, implement the `scraper.Scraper` interface — the existing
+scrapers in `internal/scraper/` serve as templates for JSON-API and
+HTML-scraping shops. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+for how collecting, reporting, and cross-shop matching work.
