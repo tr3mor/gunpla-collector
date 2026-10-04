@@ -72,8 +72,11 @@ uses can't get past.
   wrong or missed grouping by hand with `link <a> <b>` / `unlink <id>`
   (ids as shown in the `match` output) — manual choices are never
   overwritten. The search UI groups by product by default (untick "Group
-  same kit across shops" for the flat list). Only GeeksHeaven currently
-  exposes EANs, so most matching is by name.
+  same kit across shops" for the flat list). EANs come from GeeksHeaven's
+  listing API and from Gundam Store's per-product endpoint (its listing
+  leaves them out, so `collect` looks each set up once — about 20 minutes
+  the first time — and re-checks a set with no barcode after 30 days).
+  PlamoDX and Zeonmarket expose none, so their listings match by name.
 - Both `collect` and `report` default to running against every active shop in the database when
   `--shop` is omitted and `GUNPLA_SHOPS` is unset — restricted to shops
   that still have a scraper registered in this binary, so retiring a shop
@@ -117,7 +120,7 @@ Environment variables:
 | `GUNPLA_TELEGRAM_BOT_TOKEN`    | —                   | required for `report`                                    |
 | `GUNPLA_TELEGRAM_CHAT_ID`      | —                   | required for `report`                                    |
 | `GUNPLA_SHOPS`                 | (all active shops) | comma-separated slugs, e.g. `geeksheaven,gundamstore,plamodx,zeonmarket` |
-| `GUNPLA_RUN_TIMEOUT`           | `30m` (collect) / `5m` (report) | whole-run timeout, Go duration string e.g. `45m` |
+| `GUNPLA_RUN_TIMEOUT`           | `60m` (collect) / `5m` (report) | whole-run timeout, Go duration string e.g. `45m` |
 | `GUNPLA_FORCE`                 | unset (false)       | collect only: equivalent to `--force`, for use from `docker compose exec` |
 | `GUNPLA_UI_ADDR`               | `:8080`             | serve only: address to listen on                          |
 | `GUNPLA_USD_EUR_RATE`          | `0.89`              | serve/report: fallback USD→EUR rate, used only if the live rate (fetched at startup from frankfurter.dev, ECB data) is unreachable |

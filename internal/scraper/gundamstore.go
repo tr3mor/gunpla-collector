@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -81,9 +82,28 @@ type shopifyProduct struct {
 
 type shopifyVariant struct {
 	Available bool   `json:"available"`
-	Price     string `json:"price"`   // decimal string, e.g. "92.00"
-	SKU       string `json:"sku"`     // merchant-assigned, may be blank
-	Barcode   string `json:"barcode"` // usually EAN/UPC, if set
+	Price     string `json:"price"` // decimal string, e.g. "92.00"
+	SKU       string `json:"sku"`   // merchant-assigned, may be blank
+	// Barcode is usually the kit's JAN/EAN. The collection products.json
+	// FetchAll reads leaves it out; only /products/<handle>.json has it.
+	Barcode string `json:"barcode"`
+}
+
+type shopifyProductResponse struct {
+	Product shopifyProduct `json:"product"`
+}
+
+// LookupEAN reads the single-product endpoint for set's barcode. Most kits
+// have one; store exclusives (Gundam Base, P-Bandai) often don't.
+func (g *GundamStore) LookupEAN(ctx context.Context, set ScrapedSet) (string, error) {
+	var resp shopifyProductResponse
+	if err := g.fetcher.getJSON(ctx, set.URL+".json", &resp); err != nil {
+		return "", err
+	}
+	if len(resp.Product.Variants) == 0 {
+		return "", nil
+	}
+	return strings.TrimSpace(resp.Product.Variants[0].Barcode), nil
 }
 
 func (g *GundamStore) FetchAll(ctx context.Context) ([]ScrapedSet, error) {

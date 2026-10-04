@@ -204,6 +204,36 @@ func TestUpsertSet_PersistsAndUpdatesEANAndSKU(t *testing.T) {
 	}
 }
 
+func TestEANChecks_RoundTrip(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	shop, err := s.GetOrCreateShop(ctx, "test-shop", "Test Shop", "https://example.com")
+	if err != nil {
+		t.Fatalf("GetOrCreateShop: %v", err)
+	}
+	if _, err := s.UpsertSet(ctx, shop.ID, "ext-1", "u1", "Kit One", "MG", "4573102638236", "", "2026-01-01T00:00:00Z"); err != nil {
+		t.Fatalf("UpsertSet: %v", err)
+	}
+	if _, err := s.UpsertSet(ctx, shop.ID, "ext-2", "u2", "Kit Two", "MG", "", "", "2026-01-01T00:00:00Z"); err != nil {
+		t.Fatalf("UpsertSet: %v", err)
+	}
+	if err := s.MarkEANChecked(ctx, shop.ID, []string{"ext-2"}, "2026-01-02T00:00:00Z"); err != nil {
+		t.Fatalf("MarkEANChecked: %v", err)
+	}
+
+	got, err := s.EANChecks(ctx, shop.ID)
+	if err != nil {
+		t.Fatalf("EANChecks: %v", err)
+	}
+	want := map[string]EANCheck{
+		"ext-1": {EAN: "4573102638236"},
+		"ext-2": {CheckedAt: "2026-01-02T00:00:00Z"},
+	}
+	if len(got) != len(want) || got["ext-1"] != want["ext-1"] || got["ext-2"] != want["ext-2"] {
+		t.Errorf("EANChecks = %+v, want %+v", got, want)
+	}
+}
+
 // The migration-3 unique index: a second price_history row for the same
 // (set_id, run_id) must fail, since PriceChanges assumes exactly one.
 func TestInsertPriceHistory_RejectsDuplicateSetRunPair(t *testing.T) {

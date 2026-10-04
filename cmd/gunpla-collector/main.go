@@ -28,9 +28,11 @@ import (
 
 // Default whole-run timeouts when GUNPLA_RUN_TIMEOUT isn't set — a
 // backstop against a hung request or stalled Telegram send. collect gets
-// more room since it makes many rate-limited requests across shops.
+// more room since it makes many rate-limited requests across shops; the
+// first Gundam Store barcode backfill alone is one request per product,
+// ~20 minutes.
 const (
-	defaultCollectTimeout = 30 * time.Minute
+	defaultCollectTimeout = 60 * time.Minute
 	defaultReportTimeout  = 5 * time.Minute
 	// matchTimeout bounds the product-grouping step run at the end of
 	// collect; it takes well under a second for a few thousand listings.

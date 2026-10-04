@@ -32,6 +32,14 @@ That's it — no fixed delay is needed before the task fires, since
 `run-on-login.ps1` polls `docker info` for up to 2 minutes and waits for
 Docker Desktop to actually be ready before doing anything.
 
+## First run takes longer
+
+The first `collect` looks up a barcode for every Gundam Store product (one
+request each, about 20 minutes), so the whole first run takes ~25 minutes
+instead of a few. Leave the PC on until it finishes: a collect cut short
+saves nothing for that shop, and the next login starts the lookups over.
+Later runs only look up new products and are back to a few minutes.
+
 ## Checking it worked
 
 Logs land in `windows\logs\run-YYYY-MM-DD.log` (one file per day, appended
