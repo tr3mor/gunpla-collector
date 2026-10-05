@@ -34,6 +34,15 @@ func esc(s string) string {
 	return html.EscapeString(s)
 }
 
+// link renders name as a clickable anchor to rawURL, or as plain escaped
+// text when there is no http(s) URL to point at.
+func link(name, rawURL string) string {
+	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
+		return esc(name)
+	}
+	return fmt.Sprintf(`<a href="%s">%s</a>`, esc(rawURL), esc(name))
+}
+
 // FormatBaseline formats the "first-ever run, nothing to compare yet"
 // message.
 func FormatBaseline(shopName string, setsFound int) string {
@@ -86,7 +95,7 @@ func FormatDiff(shopName string, newSets, removedSets []store.ReportItem, change
 		}
 		b.WriteString(heading)
 		for _, s := range items {
-			fmt.Fprintf(&b, "• %s — %s\n", esc(s.Name), formatPrice(s.PriceCents, s.Currency))
+			fmt.Fprintf(&b, "• %s — %s\n", link(s.Name, s.URL), formatPrice(s.PriceCents, s.Currency))
 		}
 	}
 	writeItems("\n🆕 <b>New</b>\n", arrivals)

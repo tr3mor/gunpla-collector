@@ -47,7 +47,9 @@ type Run struct {
 // ReportItem is a set + the price it had at some run, used for "new" and
 // "removed" report sections.
 type ReportItem struct {
-	Name       string
+	Name string
+	// URL is the set's page on the shop, so reports can link to it.
+	URL        string
 	Grade      string
 	PriceCents int
 	Currency   string
@@ -392,7 +394,7 @@ func (s *Store) MarkReported(ctx context.Context, shopID int64, now string) erro
 // previousRunID (covers both brand-new sets and reactivated ones).
 func (s *Store) NewSets(ctx context.Context, shopID, currentRunID, previousRunID int64) ([]ReportItem, error) {
 	rows, err := s.conn.QueryContext(ctx,
-		`SELECT s.name, COALESCE(s.grade, ''), ph.price_cents, ph.currency, COALESCE(ph.availability, '')
+		`SELECT s.name, s.url, COALESCE(s.grade, ''), ph.price_cents, ph.currency, COALESCE(ph.availability, '')
 		 FROM sets s
 		 JOIN price_history ph ON ph.set_id = s.id AND ph.run_id = ?
 		 WHERE s.shop_id = ?
@@ -409,7 +411,7 @@ func (s *Store) NewSets(ctx context.Context, shopID, currentRunID, previousRunID
 // in currentRunID.
 func (s *Store) RemovedSets(ctx context.Context, shopID, currentRunID, previousRunID int64) ([]ReportItem, error) {
 	rows, err := s.conn.QueryContext(ctx,
-		`SELECT s.name, COALESCE(s.grade, ''), ph.price_cents, ph.currency, COALESCE(ph.availability, '')
+		`SELECT s.name, s.url, COALESCE(s.grade, ''), ph.price_cents, ph.currency, COALESCE(ph.availability, '')
 		 FROM sets s
 		 JOIN price_history ph ON ph.set_id = s.id AND ph.run_id = ?
 		 WHERE s.shop_id = ?
@@ -453,7 +455,7 @@ func scanReportItems(rows *sql.Rows) ([]ReportItem, error) {
 	var items []ReportItem
 	for rows.Next() {
 		var it ReportItem
-		if err := rows.Scan(&it.Name, &it.Grade, &it.PriceCents, &it.Currency, &it.Availability); err != nil {
+		if err := rows.Scan(&it.Name, &it.URL, &it.Grade, &it.PriceCents, &it.Currency, &it.Availability); err != nil {
 			return nil, err
 		}
 		items = append(items, it)
