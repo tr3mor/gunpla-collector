@@ -130,3 +130,17 @@ func TestFormatDiff_PreordersGetOwnSection(t *testing.T) {
 		t.Errorf("empty New section should be skipped:\n%s", onlyPre)
 	}
 }
+
+func TestFormatDiff_NewSetLinksToShopPage(t *testing.T) {
+	newSets := []store.ReportItem{
+		{Name: "RG <Zaku>", URL: "https://shop.example/p?a=1&b=2", PriceCents: 2500, Currency: "EUR"},
+		{Name: "No URL", PriceCents: 1000, Currency: "EUR"},
+	}
+	got := FormatDiff("Shop", newSets, nil, nil)
+	if want := `<a href="https://shop.example/p?a=1&amp;b=2">RG &lt;Zaku&gt;</a> — €25.00`; !strings.Contains(got, want) {
+		t.Errorf("missing link %q in:\n%s", want, got)
+	}
+	if !strings.Contains(got, "• No URL — €10.00") {
+		t.Errorf("item without URL should be plain text:\n%s", got)
+	}
+}
