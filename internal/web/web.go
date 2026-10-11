@@ -26,6 +26,15 @@ var indexHTML []byte
 type Catalog interface {
 	Search(ctx context.Context, f catalog.Filter) ([]store.SetSearchRow, error)
 	Products(ctx context.Context, f catalog.Filter) ([]catalog.Product, error)
+	SpecFromSet(ctx context.Context, setID int64) (catalog.WatchSpec, string, error)
+	PreviewWatch(ctx context.Context, spec catalog.WatchSpec) (catalog.WatchPreview, error)
+	WatchStatuses(ctx context.Context) ([]catalog.WatchStatus, error)
+	SaveWatch(ctx context.Context, w catalog.Watch) (catalog.Watch, error)
+	DeleteWatch(ctx context.Context, id int64) error
+	NearMisses(ctx context.Context, includeDismissed bool) ([]catalog.ReviewRow, error)
+	Link(ctx context.Context, a, b int64) error
+	DismissMatch(ctx context.Context, a, b int64) error
+	RestoreMatch(ctx context.Context, a, b int64) error
 }
 
 // Shops lists the shops the UI can filter by — matches *store.Store.
@@ -42,6 +51,8 @@ type Server struct {
 	// currencies are shown converted. EUR (and unknown currencies) pass
 	// through unchanged.
 	eurRates fx.Rates
+	// writeToken, if set, is required on requests that change data.
+	writeToken string
 }
 
 // Option configures a Server.
@@ -66,6 +77,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/shops", s.handleShops)
 	mux.HandleFunc("GET /api/search", s.handleSearch)
 	mux.HandleFunc("GET /api/products", s.handleProducts)
+	mux.HandleFunc("POST /api/watch/preview", s.handleWatchPreview)
+	mux.HandleFunc("GET /api/watches", s.handleWatches)
+	mux.HandleFunc("POST /api/watches", s.write(s.handleWatchSave))
+	mux.HandleFunc("PUT /api/watches/{id}", s.write(s.handleWatchSave))
+	mux.HandleFunc("DELETE /api/watches/{id}", s.write(s.handleWatchDelete))
+	mux.HandleFunc("GET /api/review", s.handleReview)
+	mux.HandleFunc("POST /api/review/link", s.write(s.handlePair(func(r *http.Request, a, b int64) error { return s.catalog.Link(r.Context(), a, b) })))
+	mux.HandleFunc("POST /api/review/dismiss", s.write(s.handlePair(func(r *http.Request, a, b int64) error { return s.catalog.DismissMatch(r.Context(), a, b) })))
+	mux.HandleFunc("POST /api/review/restore", s.write(s.handlePair(func(r *http.Request, a, b int64) error { return s.catalog.RestoreMatch(r.Context(), a, b) })))
+	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
+		s.writeJSON(w, map[string]bool{"write_token_required": s.writeToken != ""})
+	})
 	return mux
 }
 
@@ -96,6 +119,7 @@ func (s *Server) handleShops(w http.ResponseWriter, r *http.Request) {
 // searchResultJSON is the wire shape for one row in the search results —
 // deliberately flat (no nested shop object) to keep the frontend simple.
 type searchResultJSON struct {
+	SetID        int64  `json:"set_id"`
 	ShopSlug     string `json:"shop_slug"`
 	ShopName     string `json:"shop_name"`
 	Name         string `json:"name"`
@@ -141,6 +165,7 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 
 func (s *Server) toResultJSON(row store.SetSearchRow) searchResultJSON {
 	out := searchResultJSON{
+		SetID:        row.SetID,
 		ShopSlug:     row.ShopSlug,
 		ShopName:     row.ShopName,
 		Name:         row.Name,
@@ -184,7 +209,6 @@ type productJSON struct {
 
 type productListingJSON struct {
 	searchResultJSON
-	SetID int64 `json:"set_id"`
 	// MatchMethod is how this listing was grouped (ean, name, manual);
 	// empty for a kit seen at a single shop.
 	MatchMethod string `json:"match_method"`
@@ -207,7 +231,6 @@ func (s *Server) handleProducts(w http.ResponseWriter, r *http.Request) {
 		for _, l := range p.Listings {
 			pj.Listings = append(pj.Listings, productListingJSON{
 				searchResultJSON: s.toResultJSON(l.SetSearchRow),
-				SetID:            l.SetID,
 				MatchMethod:      l.MatchMethod,
 				Cheapest:         l.Cheapest,
 			})

@@ -94,9 +94,63 @@ EAN sources:
 The search UI groups by product by default (untick "Group same kit across
 shops" for the flat list).
 
+## Watches
+
+A watch (created from the ☆ in the search UI) alerts on a kit's price or
+stock. It follows listings through their matcher facets, **not** product
+ids, so it keeps working where grouping is imperfect. A spec holds the
+grade, model number, descriptive words, the accepted versions (`verka`,
+`clear`, `~base`, ...), and per-listing pins (`include`/`exclude`).
+
+Which listings a spec follows (`catalog.WatchSpec`, `matcher.SameSuit`):
+- grade must agree, but a listing with no grade (many pre-orders) fits any;
+- if both names print a model number they must be equal; shops often print
+  it on only one side, so otherwise the descriptive words decide
+  (near-identical sets; trimming words in the editor makes them a minimum);
+- the version words must be one of the accepted versions, so the MG
+  Ver.Ka, the plain MG and a Clear edition are separate choices;
+- a listing added by hand is always followed, an excluded one never.
+
+`report` evaluates all watches once, after the per-shop reports, and sends
+one message (`reporter.RunWatches`). Alert state lives in `watch_state` and
+is saved only after the send succeeds, so a failed send is retried and a
+standing condition is not repeated:
+- *target*: a buyable listing at or under the EUR target. Alerts once, again
+  only after the price left the target, or dropped a further 3%.
+- *restock*: nothing was buyable last pass, something is now.
+- *new listing*: a followed listing not seen before.
+The first pass of a watch only records a baseline, except that a price
+already under target is reported. Changing a watch's spec or target (or
+re-enabling it) starts it over; renaming does not. Prices in other
+currencies are converted to EUR; a listing in a currency with no rate never
+triggers.
+
+The UI saves watches through `POST/PUT/DELETE /api/watches`. Writes need
+`GUNPLA_UI_TOKEN` when set; without it they are limited to same-origin JSON
+requests (so another website can't drive your browser), which is not a
+defence against anyone who can reach the port.
+
+## Near misses
+
+The "Near misses" page (`/api/review`, `catalog.NearMisses`) lists
+cross-shop pairs that were not grouped but might be the same kit, so the
+matcher can be corrected. It only reads; nothing changes until you act:
+- **Close**: same version words, but not accepted. The reason says why:
+  different words, a model-number clash, or — often — that another listing
+  from the same shop is already in the group (shops sometimes list two
+  products under one name).
+- **Version**: the same suit where one name has extra version words
+  (Premium, Revive, ...). Frequently two real kits.
+Highlighted words are what differs between the names: candidates for an
+alias or noise word in `internal/matcher/normalize.go`. *Link* forces the
+pair into one product (like `link`), *Dismiss* hides it for good (stored in
+`match_dismissals`), and *Copy details* puts both names, how the matcher
+read them and the reason on the clipboard.
+
 ## serve
 
-Text search (case-insensitive substring), an optional regexp filter on set
+Search, watches and near-miss review (above). Search is a text
+(case-insensitive substring), an optional regexp filter on set
 name, and a shop filter. Each result shows the current price, the lowest
 price ever recorded, and a link to the listing. USD prices are converted to
 EUR using the live ECB rate from frankfurter.dev, fetched at startup, with

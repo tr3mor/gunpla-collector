@@ -7,6 +7,7 @@ package catalog
 import (
 	"context"
 	"sort"
+	"sync"
 	"time"
 
 	"gunpla-collector/internal/fx"
@@ -21,6 +22,18 @@ type Store interface {
 	LinkSets(ctx context.Context, a, b int64) error
 	UnlinkSet(ctx context.Context, id int64, now string) error
 	SearchSets(ctx context.Context, shopSlug string) ([]store.SetSearchRow, error)
+
+	// Watches and near-miss review.
+	Watches(ctx context.Context) ([]store.Watch, error)
+	WatchByID(ctx context.Context, id int64) (store.Watch, error)
+	CreateWatch(ctx context.Context, w store.Watch, now string) (int64, error)
+	UpdateWatch(ctx context.Context, w store.Watch, resetState bool, now string) error
+	DeleteWatch(ctx context.Context, id int64) error
+	WatchState(ctx context.Context, id int64) (store.WatchState, bool, error)
+	SaveWatchState(ctx context.Context, st store.WatchState, now string) error
+	DismissedMatches(ctx context.Context) (map[[2]int64]bool, error)
+	DismissMatch(ctx context.Context, a, b int64, now string) error
+	RestoreMatch(ctx context.Context, a, b int64) error
 }
 
 // Catalog groups listings into products and answers queries over them.
@@ -29,6 +42,9 @@ type Catalog struct {
 	// rates converts listing prices to EUR so listings priced in different
 	// currencies can be compared.
 	rates fx.Rates
+	// keys caches matcher.NewKey by listing name: normalising is regex-heavy
+	// and a watch preview needs the key of every listing.
+	keys sync.Map
 }
 
 // Option configures a Catalog.

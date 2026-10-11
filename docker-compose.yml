@@ -18,8 +18,10 @@ services:
   # Search UI, separate from the cron container so it can be started,
   # stopped, or restarted independently. Reads the same SQLite file over
   # the shared volume (SQLite's WAL mode allows concurrent readers while
-  # gunpla-collector holds a write transaction). No auth — bind it to a
-  # trusted network (LAN/VPN), not the public internet.
+  # gunpla-collector holds a write transaction). It also saves watches and
+  # near-miss decisions. Reading has no auth — bind it to a trusted network
+  # (LAN/VPN), not the public internet — and set GUNPLA_UI_TOKEN to require
+  # a token for changes.
   gunpla-ui:
     image: ghcr.io/tr3mor/gunpla-collector:${GUNPLA_IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -31,6 +33,7 @@ services:
       GUNPLA_DB_PATH: /data/gunpla.db
       GUNPLA_UI_ADDR: ":8080"
       GUNPLA_USD_EUR_RATE: "${GUNPLA_USD_EUR_RATE:-}"
+      GUNPLA_UI_TOKEN: "${GUNPLA_UI_TOKEN:-}"
     ports:
       - "${GUNPLA_UI_PORT:-8080}:8080"
     volumes:

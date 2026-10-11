@@ -80,6 +80,21 @@ Register-ScheduledTask -TaskName "gunpla-ui" -Action $action -Trigger $trigger `
     -Settings $settings -Description "Starts the gunpla-collector search UI on login"
 ```
 
-Since the UI container has no authentication, this is meant for a
-trusted home network — don't port-forward `GUNPLA_UI_PORT` to the
-internet.
+The UI container has no authentication for reading, and it now also
+saves your watches and near-miss decisions. This is meant for a trusted
+home network — don't port-forward `GUNPLA_UI_PORT` to the internet. If
+other people can reach the PC, add `GUNPLA_UI_TOKEN=<something>` to `.env`
+and re-run `start-ui.ps1`; the UI then asks for that token once before it
+saves a change.
+
+## Watches
+
+Watches are set up in the UI (☆ next to a set) and their alerts are sent
+by `report`, so on this setup they arrive once per login, right after the
+collect — not the moment a price changes. A watch can only react to what
+the last collect saw.
+
+After updating, the first `run-on-login.ps1` pulls the new image and
+applies the database migration automatically. The still-running old UI
+container keeps working against the migrated database; run
+`.\windows\start-ui.ps1` to restart it on the new image.

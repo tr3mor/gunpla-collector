@@ -91,6 +91,71 @@
   .cheapest { color: var(--gold); font-size: 11px; font-weight: 700; margin-left: 6px; text-transform: uppercase; }
   .method { color: var(--muted); font-size: 11px; margin-left: 6px; }
   .out-of-stock { color: var(--danger); font-size: 12px; }
+
+  .tabs { display: flex; gap: 4px; margin: 0 0 12px; }
+  .tabs button { background: none; border: 1px solid transparent; border-radius: 6px; padding: 6px 12px; color: var(--muted); font-size: 14px; cursor: pointer; }
+  .tabs button.active { color: var(--text); border-color: var(--border); background: var(--panel); font-weight: 600; }
+  .poc { background: color-mix(in srgb, var(--gold) 12%, var(--panel)); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+  button.star { background: none; border: none; cursor: pointer; font-size: 16px; color: var(--muted); padding: 0 6px 0 0; line-height: 1; }
+  button.star:hover { color: var(--gold); }
+  .btn { padding: 7px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 14px; cursor: pointer; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.danger { color: var(--danger); }
+  .btn.small { padding: 3px 9px; font-size: 12px; }
+  .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 24px 12px; z-index: 10; }
+  .modal-back.open { display: flex; }
+  .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; width: 100%; max-width: 720px; padding: 18px 20px; }
+  .modal h2 { font-size: 17px; margin: 0 0 12px; }
+  .modal h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin: 16px 0 6px; }
+  .modal input[type=text], .modal input[type=number] { padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 14px; }
+  .field-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 6px; }
+  .field-row label { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+  .variant { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 5px; font-size: 14px; }
+  .variant.sel { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--panel)); }
+  .variant .vlabel { flex: 1; font-weight: 500; }
+  .variant .vmeta { color: var(--muted); font-size: 12px; }
+  .chip { display: inline-block; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px; font-size: 12px; margin: 0 4px 4px 0; }
+  .match { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .match:last-child { border-bottom: none; }
+  .match.excluded { opacity: .45; text-decoration: line-through; }
+  .match .mname { flex: 1; min-width: 0; }
+  .match .mname a { color: var(--text); text-decoration: none; }
+  .match .mname a:hover { text-decoration: underline; }
+  .match .mprice { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .summary { padding: 10px 12px; border-radius: 6px; background: var(--bg); border: 1px solid var(--border); font-size: 14px; margin-top: 12px; }
+  .summary.hit { border-color: var(--good); color: var(--good); font-weight: 600; }
+  .modal-actions { display: flex; gap: 8px; margin-top: 16px; }
+  .modal-actions .spacer { flex: 1; }
+  .watch-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
+  .watch-card .wtitle { font-weight: 600; }
+  .watch-card .wsub { color: var(--muted); font-size: 12px; margin: 2px 0 6px; }
+  .badge { font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 2px 7px; border-radius: 10px; margin-left: 8px; border: 1px solid var(--border); color: var(--muted); }
+  .badge.hit { color: var(--good); border-color: var(--good); }
+  .badge.stock { color: var(--accent); border-color: var(--accent); }
+  .empty { color: var(--muted); padding: 20px 0; }
+
+  .note { background: color-mix(in srgb, var(--accent) 7%, var(--panel)); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+  .note code, .modal code { font-size: 12px; }
+  button.star.on { color: var(--gold); }
+  .watch-card.paused { opacity: .6; }
+  .watch-card a { color: var(--accent); }
+  .warn-line { color: var(--danger); font-size: 13px; margin: 4px 0; }
+  .badge.warn { color: var(--danger); border-color: var(--danger); }
+  .summary.warn { border-color: var(--danger); color: var(--danger); }
+  .chip a { text-decoration: none; color: var(--muted); }
+  .chip.ver { border-color: var(--gold); }
+  .chip.diff { background: color-mix(in srgb, var(--danger) 14%, var(--panel)); border-color: var(--danger); }
+  .rev-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin-bottom: 10px; }
+  .rev-card.dismissed { opacity: .55; }
+  .rev-head { margin-bottom: 8px; font-size: 13px; }
+  .rev-reason { color: var(--text); }
+  .rev-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .rev-sides .side { min-width: 0; overflow-wrap: anywhere; }
+  .rev-sides a.name { display: block; margin: 2px 0; }
+  .keyline { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .rev-actions { margin-top: 10px; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  @media (max-width: 640px) { .rev-sides { grid-template-columns: 1fr; } }
   @media (max-width: 640px) {
     table, thead, tbody, th, td, tr { display: block; }
     thead { display: none; }
@@ -103,7 +168,13 @@
 <body>
 <header>
   <h1>Gunpla Collector</h1>
+  <div class="tabs">
+    <button id="tabSearch" class="active">Search</button>
+    <button id="tabWatches">Watches <span id="watchCount"></span></button>
+    <button id="tabReview">Near misses</button>
+  </div>
 </header>
+<div id="searchView">
 <div class="controls">
   <input id="q" type="search" placeholder="Search by name…" autocomplete="off">
   <input id="regexp" type="text" placeholder="Regexp filter (optional)" autocomplete="off">
@@ -128,6 +199,32 @@
     <tbody id="rows"></tbody>
   </table>
 </main>
+</div>
+<div id="watchesView" style="display:none">
+  <main>
+    <div class="note">Alerts are sent to Telegram by the daily <code>report</code>, after the shops are collected. Watches follow listings directly, so they work even where shops aren't grouped.</div>
+    <div id="watchList"></div>
+  </main>
+</div>
+<div id="reviewView" style="display:none">
+  <div class="controls">
+    <select id="revKind"><option value="close">Close matches</option><option value="version">Version differences</option><option value="">Both</option></select>
+    <select id="revShop"><option value="">Any shop</option></select>
+    <input id="revQ" type="search" placeholder="Filter by name…" autocomplete="off">
+    <label class="checkbox"><input id="revDismissed" type="checkbox"> Show dismissed</label>
+  </div>
+  <main>
+    <div class="note"><b>Close</b>: same version words, but the names weren't similar enough (or a duplicate listing at one shop got in the way). <b>Version</b>: the same suit where one name has an extra word such as Premium or Revive; often two real kits. Highlighted words are the ones that differ: candidates for an alias or noise word in <code>internal/matcher/normalize.go</code>.</div>
+    <div id="revCounts" class="shop" style="margin-bottom:4px"></div>
+    <div id="revStatus"></div>
+    <div id="revList"></div>
+  </main>
+</div>
+<div id="tokenBack" class="modal-back"><div class="modal" style="max-width:420px"><h2>Write token</h2>
+  <p class="shop">This server asks for a token before it saves changes (<code>GUNPLA_UI_TOKEN</code>). It is remembered in this browser.</p>
+  <input type="password" id="tokenInput" style="width:100%" autocomplete="off">
+  <div class="modal-actions"><span class="spacer"></span><button class="btn" id="tokenCancel">Cancel</button><button class="btn primary" id="tokenOk">Continue</button></div></div></div>
+<div id="modalBack" class="modal-back"><div class="modal" id="modal"></div></div>
 <script>
 (function () {
   var qInput = document.getElementById('q');
@@ -161,6 +258,7 @@
         opt.textContent = s.name;
         shopSelect.appendChild(opt);
       });
+      fillReviewShops(shops);
     }).catch(function () { /* shop list is a convenience, search still works without it */ });
   }
 
@@ -169,7 +267,7 @@
     var outOfStock = row.availability === 'out_of_stock';
     var preorder = row.availability === 'preorder';
     return '<tr' + (cls ? ' class="' + cls + '"' : '') + '>' +
-      '<td data-label="Set"><a class="name" href="' + row.url.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener">' + escapeHTML(row.name) + (row.grade ? ' <span class="shop">(' + escapeHTML(row.grade) + ')</span>' : '') + '</a>' +
+      '<td data-label="Set"><button class="star" data-set="' + row.set_id + '" title="Watch this kit">&#9734;</button><a class="name" href="' + row.url.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener">' + escapeHTML(row.name) + (row.grade ? ' <span class="shop">(' + escapeHTML(row.grade) + ')</span>' : '') + '</a>' +
         (outOfStock ? '<br><span class="out-of-stock">Out of stock</span>' : '') + (preorder ? '<br><span class="shop">Pre-order</span>' : '') + '</td>' +
       '<td data-label="Shop">' + escapeHTML(row.shop_name) + '</td>' +
       '<td data-label="Current price"><span class="price-current' + (atLow ? ' at-low' : '') + '">' + formatPrice(row.current_price_cents, row.currency) + '</span>' + (extra || '') + '</td>' +
@@ -218,7 +316,7 @@
       var outOfStock = row.availability === 'out_of_stock';
       var preorder = row.availability === 'preorder';
       return '<tr>' +
-        '<td data-label="Set"><a class="name" href="' + row.url.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener">' + escapeHTML(row.name) + (row.grade ? ' <span class="shop">(' + escapeHTML(row.grade) + ')</span>' : '') + '</a>' +
+        '<td data-label="Set"><button class="star" data-set="' + row.set_id + '" title="Watch this kit">&#9734;</button><a class="name" href="' + row.url.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener">' + escapeHTML(row.name) + (row.grade ? ' <span class="shop">(' + escapeHTML(row.grade) + ')</span>' : '') + '</a>' +
           (outOfStock ? '<br><span class="out-of-stock">Out of stock</span>' : '') + (preorder ? '<br><span class="shop">Pre-order</span>' : '') + '</td>' +
         '<td data-label="Shop">' + escapeHTML(row.shop_name) + '</td>' +
         '<td data-label="Current price"><span class="price-current' + (atLow ? ' at-low' : '') + '">' + formatPrice(row.current_price_cents, row.currency) + '</span></td>' +
@@ -250,6 +348,7 @@
         return;
       }
       (groupByCheckbox.checked ? renderProducts : render)(result.body);
+      markStars();
     }).catch(function (err) {
       if (requestID !== currentRequest) return;
       statusEl.textContent = 'Error: ' + err.message;
@@ -268,8 +367,395 @@
   hideOOSCheckbox.addEventListener('change', search);
   groupByCheckbox.addEventListener('change', search);
 
+  // ---- API helper: JSON in/out, with the optional write token ----
+  var TOKEN_KEY = 'gunpla.token';
+  function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; } }
+  function setToken(t) { try { localStorage.setItem(TOKEN_KEY, t); } catch (e) { /* unavailable */ } }
+
+  // askToken shows the token form and resolves with the entered token.
+  function askToken() {
+    return new Promise(function (resolve, reject) {
+      var back = document.getElementById('tokenBack');
+      back.className = 'modal-back open';
+      var input = document.getElementById('tokenInput');
+      input.value = '';
+      input.focus();
+      document.getElementById('tokenOk').onclick = function () { back.className = 'modal-back'; resolve(input.value.trim()); };
+      document.getElementById('tokenCancel').onclick = function () { back.className = 'modal-back'; reject(new Error('A write token is required for this change.')); };
+    });
+  }
+
+  function api(method, path, body, retried) {
+    var headers = { 'Content-Type': 'application/json' };
+    if (getToken()) headers['Authorization'] = 'Bearer ' + getToken();
+    return fetch(path, { method: method, headers: headers, body: body === undefined ? undefined : JSON.stringify(body) }).then(function (r) {
+      return r.json().then(function (j) { return { r: r, j: j }; });
+    }).then(function (res) {
+      if (res.r.status === 401 && !retried) {
+        return askToken().then(function (t) { setToken(t); return api(method, path, body, true); });
+      }
+      if (!res.r.ok) throw new Error(res.j.error || ('request failed (' + res.r.status + ')'));
+      return res.j;
+    });
+  }
+
+  function eur(cents) { return '€' + (cents / 100).toFixed(2); }
+  function safeURL(u) { return /^https?:\/\//i.test(u || '') ? u : '#'; }
+  function errBox(err) { return '<div class="empty">Error: ' + escapeHTML(err.message) + '</div>'; }
+
+  // ---- Tabs ----
+  var views = { search: document.getElementById('searchView'), watches: document.getElementById('watchesView'), review: document.getElementById('reviewView') };
+  var tabs = { search: document.getElementById('tabSearch'), watches: document.getElementById('tabWatches'), review: document.getElementById('tabReview') };
+  function showTab(name) {
+    if (!views[name]) name = 'search';
+    Object.keys(views).forEach(function (k) {
+      views[k].style.display = k === name ? '' : 'none';
+      tabs[k].className = k === name ? 'active' : '';
+    });
+    try { history.replaceState(null, '', name === 'search' ? location.pathname : '#' + name); } catch (e) { /* ignore */ }
+    if (name === 'watches') renderWatches();
+    if (name === 'review') loadReview();
+  }
+  Object.keys(tabs).forEach(function (k) { tabs[k].addEventListener('click', function () { showTab(k); }); });
+
+  // ---- Watches ----
+  var watchedIDs = {};
+  function markStars() {
+    [].forEach.call(rowsEl.querySelectorAll('button.star'), function (b) {
+      var on = !!watchedIDs[b.getAttribute('data-set')];
+      b.innerHTML = on ? '&#9733;' : '&#9734;';
+      b.className = 'star' + (on ? ' on' : '');
+      b.title = on ? 'Watched: click to add another watch' : 'Watch this kit';
+    });
+  }
+  function loadWatchedSets() {
+    return api('GET', '/api/watches').then(function (d) {
+      watchedIDs = {};
+      d.watched_set_ids.forEach(function (id) { watchedIDs[id] = true; });
+      document.getElementById('watchCount').textContent = d.watches.length ? '(' + d.watches.length + ')' : '';
+      markStars();
+      return d;
+    });
+  }
+
+  function watchState(w) {
+    if (!w.enabled) return { cls: '', text: 'paused' };
+    if (w.missing_variants.length && w.listings === 0) return { cls: 'warn', text: 'version gone' };
+    if (w.hit) return { cls: 'hit', text: 'target hit' };
+    if (w.best) return { cls: 'stock', text: 'in stock' };
+    return { cls: '', text: 'nothing in stock' };
+  }
+
+  function renderWatches() {
+    var el = document.getElementById('watchList');
+    el.innerHTML = '<div class="empty">Loading…</div>';
+    loadWatchedSets().then(function (d) {
+      if (d.watches.length === 0) {
+        el.innerHTML = '<div class="empty">No watches yet. Click the ☆ next to a set in Search to watch it.</div>';
+        return;
+      }
+      el.innerHTML = d.watches.map(function (w) {
+        var st = watchState(w);
+        var target = w.max_price_cents ? ' &middot; target ≤ ' + eur(w.max_price_cents) : '';
+        var alerts = [w.on_restock ? 'restock' : '', w.on_new ? 'new listings' : ''].filter(Boolean).join(', ');
+        var line = w.best ? 'Best now ' + eur(w.best.current_price_cents) + ' at <a href="' + escapeHTML(safeURL(w.best.url)) + '" target="_blank" rel="noopener">' + escapeHTML(w.best.shop_name) + '</a>' : 'Nothing buyable right now';
+        var warn = w.missing_variants.length ? '<div class="warn-line">No listing has the version ' + w.missing_variants.map(escapeHTML).join(', ') + ' any more. Edit the watch to pick again.</div>' : '';
+        return '<div class="watch-card' + (w.enabled ? '' : ' paused') + '"><div style="display:flex;align-items:center;gap:6px"><div class="wtitle" style="flex:1">' + escapeHTML(w.label) +
+          '<span class="badge ' + st.cls + '">' + st.text + '</span></div>' +
+          '<button class="btn small" data-edit="' + w.id + '">Edit</button></div>' +
+          '<div class="wsub">' + escapeHTML(w.spec.grade || 'N/A') + ' &middot; ' + escapeHTML(w.versions.join(', ') || 'all versions') + ' &middot; ' + w.listings + ' listing' + (w.listings === 1 ? '' : 's') + target +
+          (alerts ? ' &middot; alerts: ' + alerts : '') + '</div><div>' + line + '</div>' + warn + '</div>';
+      }).join('');
+      el._watches = d.watches;
+    }).catch(function (err) { el.innerHTML = errBox(err); });
+  }
+  document.getElementById('watchList').addEventListener('click', function (e) {
+    var id = e.target.getAttribute('data-edit');
+    if (!id) return;
+    var w = (this._watches || []).filter(function (x) { return String(x.id) === id; })[0];
+    if (w) openEditor({ id: w.id, label: w.label, spec: w.spec, max_eur: w.max_price_cents ? w.max_price_cents / 100 : null, on_restock: w.on_restock, on_new: w.on_new, enabled: w.enabled });
+  });
+
+  // ---- Editor ----
+  var modalBack = document.getElementById('modalBack');
+  var modal = document.getElementById('modal');
+  var draft = null;
+  var preview = null;
+  var pinTimer = null;
+
+  function closeEditor() { modalBack.className = 'modal-back'; draft = null; }
+  modalBack.addEventListener('click', function (e) { if (e.target === modalBack) closeEditor(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && draft) closeEditor(); });
+
+  function modalError(err) {
+    modal.innerHTML = errBox(err) + '<div class="modal-actions"><button class="btn" id="mClose">Close</button></div>';
+    document.getElementById('mClose').onclick = closeEditor;
+  }
+  function openEditor(w) {
+    draft = w;
+    modalBack.className = 'modal-back open';
+    modal.innerHTML = '<div class="empty">Loading…</div>';
+    refreshEditor();
+  }
+  function refreshEditor() {
+    var d = draft;
+    api('POST', '/api/watch/preview', { spec: d.spec }).then(function (p) { if (draft === d) { preview = p; drawEditor(); } }).catch(modalError);
+  }
+
+  function summaryFor(w, p) {
+    var best = p.matches.filter(function (m) { return m.best; })[0];
+    var live = p.matches.filter(function (m) { return !m.excluded; });
+    if (live.length === 0) return { cls: 'warn', text: 'No listing matches right now, so nothing can trigger. Pick another version or add a listing below.' };
+    if (!best) return { cls: '', text: 'Nothing buyable right now.' + (w.on_restock ? ' You will be told when one is back in stock.' : '') };
+    var base = eur(best.current_price_cents) + ' at ' + escapeHTML(best.shop_name);
+    if (w.max_eur && best.current_price_cents <= Math.round(w.max_eur * 100)) return { cls: 'hit', text: 'Target hit: ' + base + '. You will be alerted at the next report.' };
+    return { cls: '', text: 'Best now ' + base + (w.max_eur ? ' (target ' + eur(Math.round(w.max_eur * 100)) + ').' : '.') };
+  }
+
+  function drawEditor() {
+    var p = preview, w = draft;
+    var live = p.matches.filter(function (m) { return !m.excluded; });
+    var h = '<h2>' + (w.id ? 'Edit watch' : 'Watch this kit') + '</h2>';
+    h += '<div class="field-row"><input type="text" id="mLabel" maxlength="120" style="flex:1;min-width:200px" value="' + escapeHTML(w.label) + '">' +
+      '<label>Target ≤ €<input type="number" id="mMax" min="0" max="100000" step="0.01" style="width:100px" value="' + (w.max_eur || '') + '" placeholder="any"></label></div>';
+    h += '<div class="field-row"><label><input type="checkbox" id="mRestock"' + (w.on_restock ? ' checked' : '') + '> Alert on restock</label>' +
+      '<label><input type="checkbox" id="mNew"' + (w.on_new ? ' checked' : '') + '> Alert on new listings</label>' +
+      '<label><input type="checkbox" id="mEnabled"' + (w.enabled ? ' checked' : '') + '> Enabled</label></div>';
+
+    h += '<h3>Suit &middot; ' + escapeHTML(w.spec.grade || 'N/A') + (w.spec.model ? ' &middot; ' + escapeHTML(w.spec.model.toUpperCase()) : '') + '</h3>';
+    h += '<div>Name must contain: ' + (w.spec.tokens.length ? w.spec.tokens.map(function (t) {
+      return '<span class="chip">' + escapeHTML(t) + ' <a href="#" data-tok="' + escapeHTML(t) + '" title="Drop this word to match more listings">&times;</a></span>';
+    }).join('') : '<span class="shop">nothing</span>') + '</div>' +
+      '<div class="shop" style="margin-top:2px">Shops that print the model number must match it; the others are matched on these words.' + (w.spec.loose ? ' Words are now a minimum: extra words in a name are fine.' : '') + '</div>';
+
+    h += '<h3>Which versions? (' + p.variants.length + ' found)</h3>';
+    if (p.missing_variants.length) h += '<div class="warn-line">No listing has the version ' + p.missing_variants.map(escapeHTML).join(', ') + ' any more.</div>';
+    h += p.variants.map(function (v) {
+      return '<label class="variant' + (v.selected ? ' sel' : '') + '"><input type="checkbox" data-variant="' + escapeHTML(v.key) + '"' + (v.selected ? ' checked' : '') + '>' +
+        '<span class="vlabel">' + escapeHTML(v.label) + '</span><span class="vmeta">' + v.listings + ' listing' + (v.listings === 1 ? '' : 's') +
+        (v.has_best ? ' &middot; best ' + eur(v.best_cents) + ' at ' + escapeHTML(v.best_shop) : ' &middot; none in stock') + '</span></label>';
+    }).join('');
+
+    h += '<h3>Matching listings (' + live.length + ') &mdash; untick to exclude one</h3>';
+    if (p.matches.length === 0) h += '<div class="empty">Nothing selected.</div>';
+    h += p.matches.map(function (m) {
+      var oos = m.availability === 'out_of_stock';
+      return '<div class="match' + (m.excluded ? ' excluded' : '') + '"><input type="checkbox" data-excl="' + m.set_id + '"' + (m.excluded ? '' : ' checked') + '>' +
+        '<span class="mname"><a href="' + escapeHTML(safeURL(m.url)) + '" target="_blank" rel="noopener">' + escapeHTML(m.name) + '</a><br><span class="shop">' + escapeHTML(m.shop_name) +
+        (m.pinned ? ' &middot; added by hand' : '') + (oos ? ' &middot; <span class="out-of-stock">out of stock</span>' : m.availability === 'preorder' ? ' &middot; pre-order' : '') + '</span></span>' +
+        (m.best ? '<span class="cheapest">best</span>' : '') +
+        '<span class="mprice">' + formatPrice(m.current_price_cents, m.currency) + (m.original_currency ? ' <span class="shop">(' + formatPrice(m.original_price_cents, m.original_currency) + ')</span>' : '') + '</span></div>';
+    }).join('');
+
+    h += '<h3>Missing a listing? Add it by hand</h3><input type="search" id="mPin" placeholder="Search by name…" autocomplete="off" style="width:100%"><div id="mPinResults"></div>';
+
+    var sm = summaryFor(w, p);
+    h += '<div class="summary ' + sm.cls + '">' + sm.text + '</div>';
+    h += '<div class="modal-actions">' + (w.id ? '<button class="btn danger" id="mDelete">Remove</button>' : '') + '<span class="spacer"></span>' +
+      '<button class="btn" id="mCancel">Cancel</button><button class="btn primary" id="mSave">' + (w.id ? 'Save' : 'Add watch') + '</button></div><div id="mError"></div>';
+    modal.innerHTML = h;
+    wireEditor(p, w);
+  }
+
+  function wireEditor(p, w) {
+    function readFields() {
+      w.label = document.getElementById('mLabel').value.trim() || w.label;
+      var mx = parseFloat(document.getElementById('mMax').value);
+      w.max_eur = mx > 0 ? mx : null;
+      w.on_restock = document.getElementById('mRestock').checked;
+      w.on_new = document.getElementById('mNew').checked;
+      w.enabled = document.getElementById('mEnabled').checked;
+    }
+    function each(sel, fn) { [].forEach.call(modal.querySelectorAll(sel), fn); }
+
+    each('[data-variant]', function (cb) {
+      cb.addEventListener('change', function () {
+        readFields();
+        var keys = [].filter.call(modal.querySelectorAll('[data-variant]'), function (x) { return x.checked; }).map(function (x) { return x.getAttribute('data-variant'); });
+        // Versions the user can't see (gone ones) stay out; at least one must stay selected.
+        if (keys.length === 0) { cb.checked = true; return; }
+        w.spec.variants = keys;
+        refreshEditor();
+      });
+    });
+    each('[data-excl]', function (cb) {
+      cb.addEventListener('change', function () {
+        readFields();
+        var id = parseInt(cb.getAttribute('data-excl'), 10);
+        var pinned = p.matches.filter(function (m) { return m.set_id === id; })[0].pinned;
+        if (pinned) {
+          // A hand-added listing is removed outright rather than excluded.
+          if (!cb.checked) w.spec.include = w.spec.include.filter(function (x) { return x !== id; });
+        } else {
+          w.spec.exclude = w.spec.exclude.filter(function (x) { return x !== id; });
+          if (!cb.checked) w.spec.exclude.push(id);
+        }
+        refreshEditor();
+      });
+    });
+    each('[data-tok]', function (a) {
+      a.addEventListener('click', function (e) {
+        e.preventDefault();
+        readFields();
+        var t = a.getAttribute('data-tok');
+        w.spec.tokens = w.spec.tokens.filter(function (x) { return x !== t; });
+        w.spec.loose = true; // fewer words means "at least these"
+        refreshEditor();
+      });
+    });
+    ['mMax', 'mRestock', 'mNew', 'mEnabled'].forEach(function (id) {
+      document.getElementById(id).addEventListener('change', function () { readFields(); drawEditor(); });
+    });
+
+    // Add-by-hand search.
+    var pin = document.getElementById('mPin');
+    var results = document.getElementById('mPinResults');
+    pin.addEventListener('input', function () {
+      clearTimeout(pinTimer);
+      pinTimer = setTimeout(function () {
+        var q = pin.value.trim();
+        if (q.length < 2) { results.innerHTML = ''; return; }
+        fetch('/api/search?show_out_of_stock=1&q=' + encodeURIComponent(q)).then(function (r) { return r.json(); }).then(function (rows) {
+          var taken = {};
+          p.matches.forEach(function (m) { taken[m.set_id] = true; });
+          rows = rows.filter(function (r) { return !taken[r.set_id]; }).slice(0, 8);
+          results.innerHTML = rows.length ? rows.map(function (r) {
+            return '<div class="match"><span class="mname">' + escapeHTML(r.name) + '<br><span class="shop">' + escapeHTML(r.shop_name) + '</span></span><span class="mprice">' + formatPrice(r.current_price_cents, r.currency) +
+              '</span><button class="btn small" data-add="' + r.set_id + '">Add</button></div>';
+          }).join('') : '<div class="shop">Nothing found (already included listings are hidden).</div>';
+          [].forEach.call(results.querySelectorAll('[data-add]'), function (b) {
+            b.addEventListener('click', function () {
+              readFields();
+              var id = parseInt(b.getAttribute('data-add'), 10);
+              w.spec.exclude = w.spec.exclude.filter(function (x) { return x !== id; });
+              if (w.spec.include.indexOf(id) < 0) w.spec.include.push(id);
+              refreshEditor();
+            });
+          });
+        }).catch(function () { results.innerHTML = '<div class="shop">Search failed.</div>'; });
+      }, 250);
+    });
+
+    document.getElementById('mCancel').onclick = closeEditor;
+    document.getElementById('mSave').onclick = function () {
+      readFields();
+      var btn = this;
+      btn.disabled = true;
+      var body = { label: w.label, spec: w.spec, max_price_cents: w.max_eur ? Math.round(w.max_eur * 100) : 0, on_restock: w.on_restock, on_new: w.on_new, enabled: w.enabled };
+      api(w.id ? 'PUT' : 'POST', w.id ? '/api/watches/' + w.id : '/api/watches', body).then(function () {
+        closeEditor();
+        showTab('watches');
+      }).catch(function (err) {
+        btn.disabled = false;
+        document.getElementById('mError').innerHTML = '<div class="warn-line">' + escapeHTML(err.message) + '</div>';
+      });
+    };
+    var del = document.getElementById('mDelete');
+    if (del) del.onclick = function () {
+      api('DELETE', '/api/watches/' + w.id).then(function () { closeEditor(); renderWatches(); })
+        .catch(function (err) { document.getElementById('mError').innerHTML = '<div class="warn-line">' + escapeHTML(err.message) + '</div>'; });
+    };
+  }
+
+  // Star on a result: open the editor with the default "this kit" spec.
+  rowsEl.addEventListener('click', function (e) {
+    var id = e.target.getAttribute && e.target.getAttribute('data-set');
+    if (!id) return;
+    modalBack.className = 'modal-back open';
+    modal.innerHTML = '<div class="empty">Loading…</div>';
+    api('POST', '/api/watch/preview', { set_id: parseInt(id, 10) }).then(function (p) {
+      draft = { id: 0, label: p.label, spec: p.spec, max_eur: null, on_restock: true, on_new: false, enabled: true };
+      preview = p;
+      drawEditor();
+    }).catch(modalError);
+  });
+
+  // ---- Near misses ----
+  var revKind = document.getElementById('revKind');
+  var revShop = document.getElementById('revShop');
+  var revQ = document.getElementById('revQ');
+  var revDismissed = document.getElementById('revDismissed');
+  var revList = document.getElementById('revList');
+  var revStatus = document.getElementById('revStatus');
+  var revItems = [];
+  var revTimer = null;
+
+  function chips(words, cls) {
+    return words.map(function (w) { return '<span class="chip ' + (cls || '') + '">' + escapeHTML(w) + '</span>'; }).join('');
+  }
+  function sideHTML(s, only) {
+    var onlySet = {};
+    only.forEach(function (w) { onlySet[w] = true; });
+    var versions = s.versions.map(function (w) { return '<span class="chip ver' + (onlySet[w] ? ' diff' : '') + '">' + escapeHTML(w) + '</span>'; }).join('');
+    var words = s.words.map(function (w) { return '<span class="chip' + (onlySet[w] ? ' diff' : '') + '">' + escapeHTML(w) + '</span>'; }).join('');
+    return '<div class="side"><div class="shop">' + escapeHTML(s.shop_name) + ' &middot; ' + escapeHTML(s.grade || 'N/A') + ' &middot; #' + s.set_id + '</div>' +
+      '<a class="name" href="' + escapeHTML(safeURL(s.url)) + '" target="_blank" rel="noopener">' + escapeHTML(s.name) + '</a>' +
+      '<div>' + formatPrice(s.current_price_cents, s.currency) + (s.availability === 'out_of_stock' ? ' <span class="out-of-stock">out of stock</span>' : '') + '</div>' +
+      '<div class="keyline">model <b>' + (s.model ? escapeHTML(s.model) : '–') + '</b> ' + versions + words + '</div></div>';
+  }
+  function debugText(it) {
+    return [it.kind + ' ' + it.score.toFixed(2) + ': ' + it.reason,
+      'A [' + it.a.shop_slug + '] ' + it.a.name + '  => model=' + it.a.model + ' versions=[' + it.a.versions.join(' ') + '] words=[' + it.a.words.join(' ') + ']',
+      'B [' + it.b.shop_slug + '] ' + it.b.name + '  => model=' + it.b.model + ' versions=[' + it.b.versions.join(' ') + '] words=[' + it.b.words.join(' ') + ']',
+      'only A: [' + it.only_a.join(' ') + ']  only B: [' + it.only_b.join(' ') + ']'].join('\n');
+  }
+
+  function drawReview(d) {
+    revItems = d.items;
+    document.getElementById('revCounts').textContent = 'close ' + d.counts.close + ' · version ' + d.counts.version;
+    revStatus.textContent = d.total === 0 ? 'Nothing to review.' : (d.items.length < d.total ? 'Showing ' + d.items.length + ' of ' + d.total + ' pairs. Narrow the filters to see the rest.' : d.total + ' pair' + (d.total === 1 ? '' : 's'));
+    revList.innerHTML = d.items.map(function (it, i) {
+      return '<div class="rev-card' + (it.dismissed ? ' dismissed' : '') + '" data-i="' + i + '"><div class="rev-head"><span class="badge ' + (it.kind === 'close' ? 'stock' : '') + '">' + it.kind + '</span> <span class="shop">score ' + it.score.toFixed(2) + '</span> ' +
+        '<span class="rev-reason">' + escapeHTML(it.reason) + '</span></div>' +
+        '<div class="rev-sides">' + sideHTML(it.a, it.only_a) + sideHTML(it.b, it.only_b) + '</div>' +
+        '<div class="rev-actions"><button class="btn small primary" data-act="link">Same kit: link</button> ' +
+        (it.dismissed ? '<button class="btn small" data-act="restore">Restore</button>' : '<button class="btn small" data-act="dismiss">Different kits: dismiss</button>') +
+        ' <button class="btn small" data-act="copy" title="Copy the names, how the matcher read them and why, to paste into an issue or a prompt">Copy details</button></div></div>';
+    }).join('');
+  }
+
+  function loadReview() {
+    var params = new URLSearchParams();
+    if (revKind.value) params.set('kind', revKind.value);
+    if (revShop.value) params.set('shop', revShop.value);
+    if (revQ.value.trim()) params.set('q', revQ.value.trim());
+    if (revDismissed.checked) params.set('dismissed', '1');
+    revStatus.textContent = 'Loading…';
+    api('GET', '/api/review?' + params.toString()).then(drawReview).catch(function (err) { revStatus.textContent = ''; revList.innerHTML = errBox(err); });
+  }
+  [revKind, revShop, revDismissed].forEach(function (el) { el.addEventListener('change', loadReview); });
+  revQ.addEventListener('input', function () { clearTimeout(revTimer); revTimer = setTimeout(loadReview, 250); });
+
+  revList.addEventListener('click', function (e) {
+    var act = e.target.getAttribute && e.target.getAttribute('data-act');
+    if (!act) return;
+    var card = e.target.closest('.rev-card');
+    var it = revItems[parseInt(card.getAttribute('data-i'), 10)];
+    if (act === 'copy') {
+      var text = debugText(it);
+      if (navigator.clipboard) navigator.clipboard.writeText(text).then(function () { e.target.textContent = 'Copied'; }, function () { window.prompt('Copy:', text); });
+      else window.prompt('Copy:', text);
+      return;
+    }
+    e.target.disabled = true;
+    api('POST', '/api/review/' + act, { a: it.a.set_id, b: it.b.set_id }).then(function () { loadReview(); })
+      .catch(function (err) { e.target.disabled = false; revStatus.textContent = 'Error: ' + err.message; });
+  });
+
+  // The shop filter reuses the shops loaded for Search.
+  function fillReviewShops(shops) {
+    shops.forEach(function (s) {
+      var opt = document.createElement('option');
+      opt.value = s.slug;
+      opt.textContent = s.name;
+      revShop.appendChild(opt);
+    });
+  }
+
   loadShops();
   search();
+  loadWatchedSets().catch(function () { /* stars are a convenience */ });
+  showTab(location.hash.replace('#', ''));
 })();
 </script>
 </body>

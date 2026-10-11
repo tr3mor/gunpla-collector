@@ -22,6 +22,9 @@ type Config struct {
 	Force bool
 	// UIAddr is the address `serve` listens on, e.g. ":8080".
 	UIAddr string
+	// UIToken, if set, is required (as a bearer token) for changes made
+	// through the UI: watches and near-miss decisions. Reading stays open.
+	UIToken string
 	// USDToEUR is the fallback USD->EUR rate, used only when the live rate
 	// can't be fetched at startup (see package fx).
 	USDToEUR float64
@@ -50,6 +53,7 @@ func Load() Config {
 		RunTimeout:     parseRunTimeout(os.Getenv("GUNPLA_RUN_TIMEOUT")),
 		Force:          parseBool(os.Getenv("GUNPLA_FORCE")),
 		UIAddr:         getEnv("GUNPLA_UI_ADDR", ":8080"),
+		UIToken:        strings.TrimSpace(os.Getenv("GUNPLA_UI_TOKEN")),
 		USDToEUR:       parseRate(os.Getenv("GUNPLA_USD_EUR_RATE"), defaultUSDToEUR),
 	}
 }

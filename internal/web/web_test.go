@@ -21,6 +21,10 @@ type fakeCatalog struct {
 	products []catalog.Product
 	err      error
 	lastSeen catalog.Filter
+	statuses []catalog.WatchStatus
+	saved    []catalog.Watch
+	review   []catalog.ReviewRow
+	linked   [][2]int64
 }
 
 func (f *fakeCatalog) Search(ctx context.Context, flt catalog.Filter) ([]store.SetSearchRow, error) {
@@ -32,6 +36,40 @@ func (f *fakeCatalog) Products(ctx context.Context, flt catalog.Filter) ([]catal
 	f.lastSeen = flt
 	return f.products, f.err
 }
+
+func (f *fakeCatalog) SpecFromSet(ctx context.Context, setID int64) (catalog.WatchSpec, string, error) {
+	return catalog.WatchSpec{}, "", f.err
+}
+
+func (f *fakeCatalog) PreviewWatch(ctx context.Context, spec catalog.WatchSpec) (catalog.WatchPreview, error) {
+	return catalog.WatchPreview{Spec: spec}, f.err
+}
+
+func (f *fakeCatalog) WatchStatuses(ctx context.Context) ([]catalog.WatchStatus, error) {
+	return f.statuses, f.err
+}
+
+func (f *fakeCatalog) SaveWatch(ctx context.Context, w catalog.Watch) (catalog.Watch, error) {
+	f.saved = append(f.saved, w)
+	if w.ID == 0 {
+		w.ID = 7
+	}
+	return w, f.err
+}
+
+func (f *fakeCatalog) DeleteWatch(ctx context.Context, id int64) error { return f.err }
+
+func (f *fakeCatalog) NearMisses(ctx context.Context, includeDismissed bool) ([]catalog.ReviewRow, error) {
+	return f.review, f.err
+}
+
+func (f *fakeCatalog) Link(ctx context.Context, a, b int64) error {
+	f.linked = append(f.linked, [2]int64{a, b})
+	return f.err
+}
+
+func (f *fakeCatalog) DismissMatch(ctx context.Context, a, b int64) error { return f.err }
+func (f *fakeCatalog) RestoreMatch(ctx context.Context, a, b int64) error { return f.err }
 
 type fakeShops []store.Shop
 
