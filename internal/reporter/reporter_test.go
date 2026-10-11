@@ -70,7 +70,7 @@ func TestRun_BaselineWhenNoPreviousRun(t *testing.T) {
 	sender := &fakeSender{}
 	shop := store.Shop{ID: 1, Slug: "geeksheaven", Name: "GeeksHeaven"}
 
-	if err := Run(context.Background(), db, shop, sender, discardLogger()); err != nil {
+	if _, err := Run(context.Background(), db, shop, sender, discardLogger()); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if len(sender.sent) != 1 || !strings.Contains(sender.sent[0], "480") {
@@ -92,11 +92,33 @@ func TestRun_DiffWhenPreviousRunExists(t *testing.T) {
 	sender := &fakeSender{}
 	shop := store.Shop{ID: 1, Slug: "geeksheaven", Name: "GeeksHeaven"}
 
-	if err := Run(context.Background(), db, shop, sender, discardLogger()); err != nil {
+	if _, err := Run(context.Background(), db, shop, sender, discardLogger()); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if len(sender.sent) != 1 || !strings.Contains(sender.sent[0], "New Kit") {
 		t.Errorf("sent = %v, want one diff message mentioning New Kit", sender.sent)
+	}
+	if len(db.markReportedAt) != 1 {
+		t.Errorf("MarkReported called %d times, want 1", len(db.markReportedAt))
+	}
+}
+
+// A shop whose new run differs from the last in nothing sends no message of
+// its own, but is still stamped reported and flagged Unchanged for the caller.
+func TestRun_UnchangedSendsNothingButMarksReported(t *testing.T) {
+	db := &fakeStore{latest: successRun(2), current: successRun(2), previous: successRun(1)}
+	sender := &fakeSender{}
+	shop := store.Shop{ID: 1, Slug: "geeksheaven", Name: "GeeksHeaven"}
+
+	outcome, err := Run(context.Background(), db, shop, sender, discardLogger())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if outcome != Unchanged {
+		t.Errorf("outcome = %v, want Unchanged", outcome)
+	}
+	if len(sender.sent) != 0 {
+		t.Errorf("sent = %v, want nothing", sender.sent)
 	}
 	if len(db.markReportedAt) != 1 {
 		t.Errorf("MarkReported called %d times, want 1", len(db.markReportedAt))
@@ -108,7 +130,7 @@ func TestRun_NoRunsYetIsAnError(t *testing.T) {
 	sender := &fakeSender{}
 	shop := store.Shop{ID: 1, Slug: "geeksheaven", Name: "GeeksHeaven"}
 
-	if err := Run(context.Background(), db, shop, sender, discardLogger()); err == nil {
+	if _, err := Run(context.Background(), db, shop, sender, discardLogger()); err == nil {
 		t.Fatal("expected error when there is no successful run yet")
 	}
 	if len(sender.sent) != 0 {
@@ -127,7 +149,7 @@ func TestRun_NothingNewToReportSendsNothing(t *testing.T) {
 	sender := &fakeSender{}
 	shop := store.Shop{ID: 1, Slug: "geeksheaven", Name: "GeeksHeaven"}
 
-	if err := Run(context.Background(), db, shop, sender, discardLogger()); err != nil {
+	if _, err := Run(context.Background(), db, shop, sender, discardLogger()); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if len(sender.sent) != 0 {
@@ -148,7 +170,7 @@ func TestRun_AlertsOnFailedCollect(t *testing.T) {
 	sender := &fakeSender{}
 	shop := store.Shop{ID: 1, Slug: "geeksheaven", Name: "GeeksHeaven"}
 
-	if err := Run(context.Background(), db, shop, sender, discardLogger()); err != nil {
+	if _, err := Run(context.Background(), db, shop, sender, discardLogger()); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if len(sender.sent) != 1 || !strings.Contains(sender.sent[0], "site structure changed") {
@@ -166,11 +188,12 @@ func TestRun_AlertsOnFailedCollectThenReportsUnrelatedDiff(t *testing.T) {
 		latest:   &store.Run{ID: 3, Status: "failed", Error: sql.NullString{String: "boom", Valid: true}},
 		current:  successRun(2),
 		previous: successRun(1),
+		newSets:  []store.ReportItem{{Name: "New Kit", PriceCents: 5000}},
 	}
 	sender := &fakeSender{}
 	shop := store.Shop{ID: 1, Slug: "geeksheaven", Name: "GeeksHeaven"}
 
-	if err := Run(context.Background(), db, shop, sender, discardLogger()); err != nil {
+	if _, err := Run(context.Background(), db, shop, sender, discardLogger()); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if len(sender.sent) != 2 {
@@ -193,7 +216,7 @@ func TestRun_StuckRunningIsTreatedAsFailed(t *testing.T) {
 	sender := &fakeSender{}
 	shop := store.Shop{ID: 1, Slug: "geeksheaven", Name: "GeeksHeaven"}
 
-	if err := Run(context.Background(), db, shop, sender, discardLogger()); err != nil {
+	if _, err := Run(context.Background(), db, shop, sender, discardLogger()); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if len(sender.sent) != 1 || !strings.Contains(sender.sent[0], "still running") {
@@ -240,7 +263,7 @@ func TestRun_RecentlyRunningIsNotStuck(t *testing.T) {
 	sender := &fakeSender{}
 	shop := store.Shop{ID: 1, Slug: "geeksheaven", Name: "GeeksHeaven"}
 
-	if err := Run(context.Background(), db, shop, sender, discardLogger()); err != nil {
+	if _, err := Run(context.Background(), db, shop, sender, discardLogger()); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if len(sender.sent) != 0 {
@@ -261,7 +284,7 @@ func TestRun_ConvertsUSDToEUR(t *testing.T) {
 	sender := &fakeSender{}
 	shop := store.Shop{ID: 1, Slug: "gundamstore", Name: "Gundam Store"}
 
-	if err := Run(context.Background(), db, shop, sender, discardLogger(), WithEURRates(fx.Rates{"USD": 0.9})); err != nil {
+	if _, err := Run(context.Background(), db, shop, sender, discardLogger(), WithEURRates(fx.Rates{"USD": 0.9})); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	msg := sender.sent[0]

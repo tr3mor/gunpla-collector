@@ -67,17 +67,17 @@ func truncate(s string, n int) string {
 	return string(r[:n]) + "…"
 }
 
+// FormatNoChanges is the single message sent when no shop had any changes.
+func FormatNoChanges() string {
+	return "📊 <b>Daily report</b>\n\nNo changes for all stores."
+}
+
 // FormatDiff formats the daily new/removed/price-change report. Sections
-// with nothing to show are skipped; if there's nothing at all, a short
-// "no changes" message is returned.
+// with nothing to show are skipped. Callers skip shops with nothing at all
+// (see Unchanged), so an empty diff is not expected here.
 func FormatDiff(shopName string, newSets, removedSets []store.ReportItem, changes []store.PriceChange) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "📊 <b>%s</b> — daily report\n", esc(shopName))
-
-	if len(newSets) == 0 && len(removedSets) == 0 && len(changes) == 0 {
-		b.WriteString("\nNo changes today.")
-		return b.String()
-	}
 
 	// Pre-orders get their own section so an opening isn't lost among
 	// regular arrivals.
