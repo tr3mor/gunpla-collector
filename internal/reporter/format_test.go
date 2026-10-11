@@ -15,10 +15,9 @@ func TestFormatBaseline(t *testing.T) {
 	}
 }
 
-func TestFormatDiff_NoChanges(t *testing.T) {
-	msg := FormatDiff("GeeksHeaven", nil, nil, nil)
-	if !strings.Contains(msg, "No changes today") {
-		t.Errorf("expected no-changes message, got %q", msg)
+func TestFormatNoChanges(t *testing.T) {
+	if msg := FormatNoChanges(); !strings.Contains(msg, "No changes for all stores") {
+		t.Errorf("got %q", msg)
 	}
 }
 
