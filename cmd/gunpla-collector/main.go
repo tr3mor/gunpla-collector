@@ -174,6 +174,14 @@ func run(args []string) error {
 				continue
 			}
 		}
+		// Watches span shops, so they are checked once after every shop's
+		// report rather than per shop.
+		if err := reporter.RunWatches(ctx, catalog.New(db, catalog.WithEURRates(rates)), tg, logger); err != nil {
+			logger.Error("watch alerts failed", "error", err)
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
 		return firstErr
 	}
 

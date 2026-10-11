@@ -111,6 +111,9 @@ func TestWrites_RequireTheTokenWhenSet(t *testing.T) {
 	if rec := send(s, "POST", "/api/watches", watchBody, map[string]string{"Authorization": "Bearer wrong"}); rec.Code != 401 {
 		t.Errorf("wrong token: %d", rec.Code)
 	}
+	if rec := send(s, "POST", "/api/watches", watchBody, map[string]string{"Authorization": "s3cret"}); rec.Code != 401 {
+		t.Errorf("token without the Bearer prefix: %d, want 401", rec.Code)
+	}
 	if rec := send(s, "POST", "/api/watches", watchBody, map[string]string{"Authorization": "Bearer s3cret"}); rec.Code != 200 {
 		t.Errorf("right token: %d %s", rec.Code, rec.Body)
 	}

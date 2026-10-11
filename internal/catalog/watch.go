@@ -87,7 +87,7 @@ func (s WatchSpec) Validate() error {
 	}
 	for _, w := range append(append([]string{s.Model, s.Grade}, s.Tokens...), s.Variants...) {
 		if len(w) > maxWordLen {
-			return fmt.Errorf("%q is too long", w[:20]+"…")
+			return fmt.Errorf("%q is too long", truncateRunes(w, 20))
 		}
 	}
 	return nil
@@ -346,4 +346,14 @@ func variantLabel(k matcher.Key) string {
 		}
 	}
 	return strings.Join(words, " + ")
+}
+
+// truncateRunes shortens s to n runes (not bytes, so a multi-byte character
+// is never cut in half), marking the cut.
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }

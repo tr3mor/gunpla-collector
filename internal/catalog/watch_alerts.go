@@ -249,9 +249,13 @@ func (c *Catalog) EvaluateWatches(ctx context.Context) (*WatchPass, error) {
 		live := p.Live()
 		best, hasBest := p.Best()
 
-		next := store.WatchState{WatchID: w.ID, WasBuyable: hasBest, LastAlertCents: prev.LastAlertCents}
+		// KnownSets only grows, so a listing that vanishes for one scrape
+		// and comes back is not announced as new again.
+		next := store.WatchState{WatchID: w.ID, WasBuyable: hasBest, LastAlertCents: prev.LastAlertCents, KnownSets: slices.Clone(prev.KnownSets)}
 		for _, m := range live {
-			next.KnownSets = append(next.KnownSets, m.SetID)
+			if !slices.Contains(next.KnownSets, m.SetID) {
+				next.KnownSets = append(next.KnownSets, m.SetID)
+			}
 		}
 		alert := WatchAlert{Watch: w, Best: best, HasBest: hasBest}
 
@@ -266,7 +270,9 @@ func (c *Catalog) EvaluateWatches(ctx context.Context) (*WatchPass, error) {
 		} else {
 			next.LastAlertCents = 0 // above target or nothing to buy: armed again
 		}
-		if seen && w.OnRestock && hasBest && !prev.WasBuyable {
+		// A restock that also lands under the target is one event: the
+		// target alert already says the kit is buyable.
+		if seen && w.OnRestock && hasBest && !prev.WasBuyable && len(alert.Reasons) == 0 {
 			alert.Reasons = append(alert.Reasons, ReasonRestock)
 		}
 		if seen && w.OnNew {

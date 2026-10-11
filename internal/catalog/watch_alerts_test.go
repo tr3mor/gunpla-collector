@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"unicode/utf8"
 
 	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
@@ -337,4 +338,53 @@ func TestSpecFromSet_PinsANameThatCannotMatchItself(t *testing.T) {
 	if _, _, err := c.SpecFromSet(ctx, 12345); err == nil {
 		t.Error("unknown set: want an error")
 	}
+}
+
+func TestEvaluateWatches_AListingThatFlapsIsNotNewAgain(t *testing.T) {
+	f := newShopFixture(t)
+	c := New(f.s)
+	f.scrape("a", set("1", "MG Full Armor ZZ Gundam Ver.Ka", 15000, inStock))
+	if _, err := c.SaveWatch(context.Background(), kaWatch(0, false, true)); err != nil {
+		t.Fatal(err)
+	}
+	pass(t, c)
+	f.scrape("a") // the shop's catalog briefly lacks it
+	pass(t, c)
+	f.scrape("a", set("1", "MG Full Armor ZZ Gundam Ver.Ka", 15000, inStock))
+	if got := reasons(pass(t, c)); len(got) != 0 {
+		t.Fatalf("returning listing alerted as new: %v", got)
+	}
+}
+
+func TestEvaluateWatches_RestockUnderTargetIsOneAlertReason(t *testing.T) {
+	f := newShopFixture(t)
+	c := New(f.s)
+	f.scrape("a", set("1", "MG Full Armor ZZ Gundam Ver.Ka", 9000, oos))
+	if _, err := c.SaveWatch(context.Background(), kaWatch(12000, true, false)); err != nil {
+		t.Fatal(err)
+	}
+	pass(t, c)
+	f.scrape("a", set("1", "MG Full Armor ZZ Gundam Ver.Ka", 9000, inStock))
+	if got := reasons(pass(t, c)); !reflect.DeepEqual(got, [][]string{{ReasonTarget}}) {
+		t.Fatalf("alerts %v, want a single target reason", got)
+	}
+}
+
+func TestSaveWatch_LongMultibyteWordIsRejectedCleanly(t *testing.T) {
+	c := New(newShopFixture(t).s)
+	w := kaWatch(12000, true, false)
+	w.Spec.Tokens = []string{repeat("ν", 40)} // 80 bytes
+	_, err := c.SaveWatch(context.Background(), w)
+	var bad *ErrInvalidWatch
+	if !errors.As(err, &bad) || !utf8.ValidString(err.Error()) {
+		t.Fatalf("err = %v, want a valid-UTF-8 ErrInvalidWatch", err)
+	}
+}
+
+func repeat(s string, n int) string {
+	out := ""
+	for i := 0; i < n; i++ {
+		out += s
+	}
+	return out
 }

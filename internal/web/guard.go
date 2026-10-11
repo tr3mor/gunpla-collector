@@ -42,8 +42,8 @@ var errUnauthorized = errors.New("a valid write token is required")
 
 func (s *Server) checkWrite(r *http.Request) error {
 	if s.writeToken != "" {
-		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if subtle.ConstantTimeCompare([]byte(got), []byte(s.writeToken)) != 1 {
+		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok || subtle.ConstantTimeCompare([]byte(got), []byte(s.writeToken)) != 1 {
 			return errUnauthorized
 		}
 	}
