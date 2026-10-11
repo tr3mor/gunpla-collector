@@ -7,32 +7,37 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
-	"regexp"
-	"sort"
 	"strings"
 
+	"gunpla-collector/internal/catalog"
 	"gunpla-collector/internal/fx"
-	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
 )
 
 //go:embed index.html
 var indexHTML []byte
 
-// DataStore is the store dependency the web server needs — matches
-// *store.Store's method set, kept as an interface so handlers are testable
-// against a fake.
-type DataStore interface {
-	SearchSets(ctx context.Context, shopSlug string) ([]store.SetSearchRow, error)
+// Catalog is the listings and products the server serves — matches
+// *catalog.Catalog, kept as an interface so handlers are testable against
+// a fake.
+type Catalog interface {
+	Search(ctx context.Context, f catalog.Filter) ([]store.SetSearchRow, error)
+	Products(ctx context.Context, f catalog.Filter) ([]catalog.Product, error)
+}
+
+// Shops lists the shops the UI can filter by — matches *store.Store.
+type Shops interface {
 	ActiveShops(ctx context.Context) ([]store.Shop, error)
 }
 
 // Server serves the search UI and its backing JSON API.
 type Server struct {
-	store  DataStore
-	logger *slog.Logger
+	catalog Catalog
+	shops   Shops
+	logger  *slog.Logger
 	// eurRates maps a currency code to its EUR value; prices in those
 	// currencies are shown converted. EUR (and unknown currencies) pass
 	// through unchanged.
@@ -47,8 +52,8 @@ func WithEURRates(rates fx.Rates) Option {
 	return func(s *Server) { s.eurRates = rates }
 }
 
-func NewServer(ds DataStore, logger *slog.Logger, opts ...Option) *Server {
-	s := &Server{store: ds, logger: logger}
+func NewServer(c Catalog, shops Shops, logger *slog.Logger, opts ...Option) *Server {
+	s := &Server{catalog: c, shops: shops, logger: logger}
 	for _, o := range opts {
 		o(s)
 	}
@@ -72,7 +77,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleShops(w http.ResponseWriter, r *http.Request) {
-	shops, err := s.store.ActiveShops(r.Context())
+	shops, err := s.shops.ActiveShops(r.Context())
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, err)
 		return
@@ -107,62 +112,27 @@ type searchResultJSON struct {
 	OriginalCurrency string `json:"original_currency,omitempty"`
 }
 
-// filterRows applies the request's search filters (q, regexp, shop, grade,
-// show_out_of_stock) to the active listings. A non-nil error is a bad
-// request (e.g. an invalid regexp) when badRequest is true.
-func (s *Server) filterRows(r *http.Request) (rows []store.SetSearchRow, badRequest bool, err error) {
+// filter reads the request's search filters (q, regexp, shop, grade,
+// show_out_of_stock).
+func filter(r *http.Request) catalog.Filter {
 	q := r.URL.Query()
-	nameSubstr := strings.TrimSpace(q.Get("q"))
-	nameRegexp := strings.TrimSpace(q.Get("regexp"))
-	shopSlug := strings.TrimSpace(q.Get("shop"))
-	// "grade" is MG/HG/RG/PG (case-insensitive), or "none" for sets with no
-	// grade (e.g. most pre-orders).
-	grade := strings.TrimSpace(q.Get("grade"))
-	// Out-of-stock sets are hidden unless the caller explicitly asks to see
-	// them — matches the UI's "hide out of stock" checkbox, checked by
-	// default.
-	showOutOfStock := q.Get("show_out_of_stock") == "1" || strings.EqualFold(q.Get("show_out_of_stock"), "true")
-
-	var re *regexp.Regexp
-	if nameRegexp != "" {
-		// Case-insensitive by default — (?i) is harmless to prepend even if
-		// the caller already wrote their own flags.
-		re, err = regexp.Compile("(?i)" + nameRegexp)
-		if err != nil {
-			return nil, true, err
-		}
+	return catalog.Filter{
+		Query:  strings.TrimSpace(q.Get("q")),
+		Regexp: strings.TrimSpace(q.Get("regexp")),
+		Shop:   strings.TrimSpace(q.Get("shop")),
+		Grade:  strings.TrimSpace(q.Get("grade")),
+		// Out-of-stock sets are hidden unless the caller explicitly asks to
+		// see them — matches the UI's "hide out of stock" checkbox, checked
+		// by default.
+		ShowOutOfStock: q.Get("show_out_of_stock") == "1" || strings.EqualFold(q.Get("show_out_of_stock"), "true"),
 	}
-
-	all, err := s.store.SearchSets(r.Context(), shopSlug)
-	if err != nil {
-		return nil, false, err
-	}
-	for _, row := range all {
-		if nameSubstr != "" && !strings.Contains(strings.ToLower(row.Name), strings.ToLower(nameSubstr)) {
-			continue
-		}
-		if grade != "" {
-			if strings.EqualFold(grade, "none") {
-				if row.Grade != "" {
-					continue
-				}
-			} else if !strings.EqualFold(row.Grade, grade) {
-				continue
-			}
-		}
-		if re != nil && !re.MatchString(row.Name) {
-			continue
-		}
-		if !showOutOfStock && row.Availability == scraper.AvailabilityOutOfStock {
-			continue
-		}
-		rows = append(rows, row)
-	}
-	return rows, false, nil
 }
 
-func (s *Server) failFilter(w http.ResponseWriter, badRequest bool, err error) {
-	if badRequest {
+// fail answers a failed catalog query: 400 for a filter the caller got
+// wrong (e.g. an invalid regexp), 500 otherwise.
+func (s *Server) fail(w http.ResponseWriter, err error) {
+	var bad *catalog.InvalidFilterError
+	if errors.As(err, &bad) {
 		s.writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -192,9 +162,9 @@ func (s *Server) toResultJSON(row store.SetSearchRow) searchResultJSON {
 }
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
-	rows, bad, err := s.filterRows(r)
+	rows, err := s.catalog.Search(r.Context(), filter(r))
 	if err != nil {
-		s.failFilter(w, bad, err)
+		s.fail(w, err)
 		return
 	}
 	out := make([]searchResultJSON, 0, len(rows))
@@ -224,83 +194,27 @@ type productListingJSON struct {
 }
 
 // handleProducts is /api/search with listings of the same kit grouped
-// together. A kit is returned if any of its listings passes the filters,
-// and with every listing that does, so the cross-shop price comparison
-// stays visible. Kits sold by more shops come first.
+// together.
 func (s *Server) handleProducts(w http.ResponseWriter, r *http.Request) {
-	rows, bad, err := s.filterRows(r)
+	products, err := s.catalog.Products(r.Context(), filter(r))
 	if err != nil {
-		s.failFilter(w, bad, err)
+		s.fail(w, err)
 		return
 	}
-
-	byProduct := map[int64]*productJSON{}
-	var order []int64
-	for _, row := range rows {
-		// A listing the matcher hasn't seen yet stands alone, keyed by a
-		// negative id that can't collide with a product id.
-		key := row.ProductID
-		if key == 0 {
-			key = -row.SetID
+	out := make([]productJSON, 0, len(products))
+	for _, p := range products {
+		pj := productJSON{ProductID: p.ID, Name: p.Name, Grade: p.Grade, Listings: make([]productListingJSON, 0, len(p.Listings))}
+		for _, l := range p.Listings {
+			pj.Listings = append(pj.Listings, productListingJSON{
+				searchResultJSON: s.toResultJSON(l.SetSearchRow),
+				SetID:            l.SetID,
+				MatchMethod:      l.MatchMethod,
+				Cheapest:         l.Cheapest,
+			})
 		}
-		p, ok := byProduct[key]
-		if !ok {
-			name := row.ProductName
-			if name == "" {
-				name = row.Name
-			}
-			p = &productJSON{ProductID: row.ProductID, Name: name, Grade: row.Grade}
-			byProduct[key] = p
-			order = append(order, key)
-		}
-		p.Listings = append(p.Listings, productListingJSON{
-			searchResultJSON: s.toResultJSON(row),
-			SetID:            row.SetID,
-			MatchMethod:      row.MatchMethod,
-		})
+		out = append(out, pj)
 	}
-
-	out := make([]*productJSON, 0, len(order))
-	for _, key := range order {
-		p := byProduct[key]
-		markCheapest(p.Listings)
-		out = append(out, p)
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if len(out[i].Listings) != len(out[j].Listings) {
-			return len(out[i].Listings) > len(out[j].Listings)
-		}
-		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
-	})
 	s.writeJSON(w, out)
-}
-
-// markCheapest flags the cheapest in-stock (or pre-order) EUR listing, but
-// only when at least two shops list the kit — a lone listing is trivially
-// "cheapest". Out-of-stock listings never win; listings still in another
-// currency (no configured rate) aren't comparable and are skipped.
-func markCheapest(ls []productListingJSON) {
-	shops := map[string]bool{}
-	for _, l := range ls {
-		shops[l.ShopSlug] = true
-	}
-	if len(shops) < 2 {
-		return
-	}
-	best := -1
-	for _, l := range ls {
-		if l.Currency != "EUR" || l.Availability == string(scraper.AvailabilityOutOfStock) {
-			continue
-		}
-		if best == -1 || l.CurrentCents < best {
-			best = l.CurrentCents
-		}
-	}
-	for i, l := range ls {
-		if best != -1 && l.Currency == "EUR" && l.Availability != string(scraper.AvailabilityOutOfStock) && l.CurrentCents == best {
-			ls[i].Cheapest = true
-		}
-	}
 }
 
 func (s *Server) writeJSON(w http.ResponseWriter, v any) {

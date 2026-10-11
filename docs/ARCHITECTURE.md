@@ -71,6 +71,12 @@ Newly opened pre-orders get their own "Pre-orders opened" section.
 `match` groups listings of the same kit across shops into *products*. It
 only reads the database — no network.
 
+Everything about products lives in `internal/catalog`: `Regroup` (run by
+`match` and at the end of `collect`), `Link`/`Unlink`, and the read model
+the search UI uses (`Search`, `Products`, with the cheapest listing of a
+multi-shop kit flagged). `internal/matcher` is the pure grouping algorithm
+it uses internally; `internal/store` only persists.
+
 A listing joins a product when it shares a barcode (EAN) with it, or when
 its normalised name does: same grade, same model number (e.g. RX-78-2),
 same variant words (Ver.Ka, Clear, Custom, Premium Bandai, ...), and enough

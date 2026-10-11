@@ -4,14 +4,24 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"sort"
-
-	"gunpla-collector/internal/matcher"
 )
 
-// MatchListings loads every set (active or not, so history keeps its
-// grouping) in the shape the matcher wants.
-func (s *Store) MatchListings(ctx context.Context) ([]matcher.Listing, error) {
+// ListingRow is one stored set as the product module sees it: enough to
+// decide which sets are the same kit.
+type ListingRow struct {
+	ID    int64
+	Shop  string // shop slug
+	Name  string
+	Grade string
+	EAN   string
+	// ProductID is the product the set is currently in; 0 if none yet.
+	ProductID int64
+	// Manual marks a set whose product was chosen by hand (link/unlink).
+	Manual bool
+}
+
+// Listings loads every set (active or not, so history keeps its grouping).
+func (s *Store) Listings(ctx context.Context) ([]ListingRow, error) {
 	rows, err := s.conn.QueryContext(ctx,
 		`SELECT s.id, sh.slug, s.name, COALESCE(s.grade, ''), COALESCE(s.ean, ''),
 		        COALESCE(s.product_id, 0), COALESCE(s.match_method, '') = 'manual'
@@ -21,9 +31,9 @@ func (s *Store) MatchListings(ctx context.Context) ([]matcher.Listing, error) {
 		return nil, fmt.Errorf("query listings: %w", err)
 	}
 	defer rows.Close()
-	var out []matcher.Listing
+	var out []ListingRow
 	for rows.Next() {
-		var l matcher.Listing
+		var l ListingRow
 		if err := rows.Scan(&l.ID, &l.Shop, &l.Name, &l.Grade, &l.EAN, &l.ProductID, &l.Manual); err != nil {
 			return nil, err
 		}
@@ -32,110 +42,61 @@ func (s *Store) MatchListings(ctx context.Context) ([]matcher.Listing, error) {
 	return out, rows.Err()
 }
 
-// MatchStats summarises one ApplyMatches call.
-type MatchStats struct {
-	Products     int // products after the run
-	MultiShop    int // products listed by two or more shops
-	Created      int // new product rows
-	Removed      int // product rows left with no listings
-	Reassigned   int // listings whose product_id changed
-	ByMethod     map[string]int
-	ListingCount int
+// ProductPlan is the desired state of one product: its sets, and how each
+// got there.
+type ProductPlan struct {
+	// ProductID is the existing product to keep; 0 creates a new one.
+	ProductID int64
+	Name      string
+	Grade     string
+	Members   []ProductMember
 }
 
-// ApplyMatches stores groups as products in one transaction. A group keeps
-// the product id its members already had (lowest wins; a split gets fresh
-// ids), so ids stay stable between runs. Products left with no listings are
-// deleted.
-func (s *Store) ApplyMatches(ctx context.Context, listings []matcher.Listing, groups []matcher.Group, now string) (MatchStats, error) {
-	byID := make(map[int64]matcher.Listing, len(listings))
-	for _, l := range listings {
-		byID[l.ID] = l
-	}
-	stats := MatchStats{ByMethod: map[string]int{}, ListingCount: len(listings)}
+// ProductMember assigns one set to a plan, recording how it was matched
+// ("ean", "name", "manual"; empty for a set that is alone).
+type ProductMember struct {
+	SetID  int64
+	Method string
+}
 
+// ApplyProducts makes the products table match plans in one transaction,
+// then deletes products left with no sets. It returns how many products
+// it created and deleted.
+func (s *Store) ApplyProducts(ctx context.Context, plans []ProductPlan, now string) (created, removed int, err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return stats, fmt.Errorf("begin tx: %w", err)
+		return 0, 0, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback() // no-op once committed
-	c := &Store{db: s.db, conn: tx}
 
-	used := map[int64]bool{}
-	for _, g := range groups {
-		// Pick the product id to keep: the lowest one a member already has
-		// that no earlier group claimed.
-		var pid int64
-		for _, id := range g.Members {
-			if p := byID[id].ProductID; p != 0 && !used[p] && (pid == 0 || p < pid) {
-				pid = p
-			}
-		}
-		name, grade := canonical(g, byID)
+	for _, p := range plans {
+		pid := p.ProductID
 		if pid == 0 {
-			res, err := c.conn.ExecContext(ctx, `INSERT INTO products (name, grade, created_at) VALUES (?, ?, ?)`, name, nullIfEmpty(grade), now)
+			res, err := tx.ExecContext(ctx, `INSERT INTO products (name, grade, created_at) VALUES (?, ?, ?)`, p.Name, nullIfEmpty(p.Grade), now)
 			if err != nil {
-				return stats, fmt.Errorf("insert product: %w", err)
+				return 0, 0, fmt.Errorf("insert product: %w", err)
 			}
 			if pid, err = res.LastInsertId(); err != nil {
-				return stats, err
+				return 0, 0, err
 			}
-			stats.Created++
-		} else if _, err := c.conn.ExecContext(ctx, `UPDATE products SET name = ?, grade = ? WHERE id = ?`, name, nullIfEmpty(grade), pid); err != nil {
-			return stats, fmt.Errorf("update product: %w", err)
+			created++
+		} else if _, err := tx.ExecContext(ctx, `UPDATE products SET name = ?, grade = ? WHERE id = ?`, p.Name, nullIfEmpty(p.Grade), pid); err != nil {
+			return 0, 0, fmt.Errorf("update product: %w", err)
 		}
-		used[pid] = true
-
-		shops := map[string]bool{}
-		for _, id := range g.Members {
-			l := byID[id]
-			shops[l.Shop] = true
-			if l.ProductID != pid {
-				stats.Reassigned++
+		for _, m := range p.Members {
+			if _, err := tx.ExecContext(ctx, `UPDATE sets SET product_id = ?, match_method = ? WHERE id = ?`,
+				pid, nullIfEmpty(m.Method), m.SetID); err != nil {
+				return 0, 0, fmt.Errorf("update set %d: %w", m.SetID, err)
 			}
-			stats.ByMethod[methodLabel(g.Method[id])]++
-			if _, err := c.conn.ExecContext(ctx, `UPDATE sets SET product_id = ?, match_method = ? WHERE id = ?`,
-				pid, nullIfEmpty(g.Method[id]), id); err != nil {
-				return stats, fmt.Errorf("update set %d: %w", id, err)
-			}
-		}
-		stats.Products++
-		if len(shops) > 1 {
-			stats.MultiShop++
 		}
 	}
 
-	res, err := c.conn.ExecContext(ctx, `DELETE FROM products WHERE id NOT IN (SELECT product_id FROM sets WHERE product_id IS NOT NULL)`)
+	res, err := tx.ExecContext(ctx, `DELETE FROM products WHERE id NOT IN (SELECT product_id FROM sets WHERE product_id IS NOT NULL)`)
 	if err != nil {
-		return stats, fmt.Errorf("delete empty products: %w", err)
+		return 0, 0, fmt.Errorf("delete empty products: %w", err)
 	}
 	n, _ := res.RowsAffected()
-	stats.Removed = int(n)
-	return stats, tx.Commit()
-}
-
-func methodLabel(m string) string {
-	if m == "" {
-		return "single"
-	}
-	return m
-}
-
-// canonical picks a group's display name (the shortest listing name — shops
-// pad names with "Bandai Model Kit" style noise) and grade (first non-empty).
-func canonical(g matcher.Group, byID map[int64]matcher.Listing) (name, grade string) {
-	ids := append([]int64(nil), g.Members...)
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	for _, id := range ids {
-		l := byID[id]
-		if name == "" || len(l.Name) < len(name) {
-			name = l.Name
-		}
-		if grade == "" {
-			grade = l.Grade
-		}
-	}
-	return name, grade
+	return created, int(n), tx.Commit()
 }
 
 // LinkSets puts set b into set a's product by hand (creating one for a if

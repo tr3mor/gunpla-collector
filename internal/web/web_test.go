@@ -3,55 +3,60 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"gunpla-collector/internal/catalog"
 	"gunpla-collector/internal/fx"
-	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
 )
 
-// fakeStore is an in-memory DataStore for testing handlers without SQLite.
-type fakeStore struct {
-	rows  []store.SetSearchRow
-	shops []store.Shop
+// fakeCatalog returns canned results and records the filter it was asked for.
+type fakeCatalog struct {
+	rows     []store.SetSearchRow
+	products []catalog.Product
+	err      error
+	lastSeen catalog.Filter
 }
 
-func (f *fakeStore) SearchSets(ctx context.Context, shopSlug string) ([]store.SetSearchRow, error) {
-	if shopSlug == "" {
-		return f.rows, nil
-	}
-	var out []store.SetSearchRow
-	for _, r := range f.rows {
-		if r.ShopSlug == shopSlug {
-			out = append(out, r)
-		}
-	}
-	return out, nil
+func (f *fakeCatalog) Search(ctx context.Context, flt catalog.Filter) ([]store.SetSearchRow, error) {
+	f.lastSeen = flt
+	return f.rows, f.err
 }
 
-func (f *fakeStore) ActiveShops(ctx context.Context) ([]store.Shop, error) {
-	return f.shops, nil
+func (f *fakeCatalog) Products(ctx context.Context, flt catalog.Filter) ([]catalog.Product, error) {
+	f.lastSeen = flt
+	return f.products, f.err
 }
 
-func newTestServer() (*Server, *fakeStore) {
-	fs := &fakeStore{
+type fakeShops []store.Shop
+
+func (f fakeShops) ActiveShops(ctx context.Context) ([]store.Shop, error) { return f, nil }
+
+func newTestServer() (*Server, *fakeCatalog) {
+	fc := &fakeCatalog{
 		rows: []store.SetSearchRow{
 			{ShopSlug: "shop-a", ShopName: "Shop A", Name: "RX-78-2 Gundam", Grade: "MG", URL: "https://a/rx78", CurrentCents: 4000, Currency: "EUR", LowestCents: 3500, ScrapedAt: "2026-01-03T00:00:00Z"},
-			{ShopSlug: "shop-a", ShopName: "Shop A", Name: "Zaku II", Grade: "HG", URL: "https://a/zaku", CurrentCents: 2000, Currency: "EUR", LowestCents: 2000, ScrapedAt: "2026-01-03T00:00:00Z"},
 			{ShopSlug: "shop-b", ShopName: "Shop B", Name: "RX-93 Nu Gundam", Grade: "RG", URL: "https://b/rx93", CurrentCents: 3000, Currency: "USD", LowestCents: 3000, ScrapedAt: "2026-01-03T00:00:00Z"},
-			{ShopSlug: "shop-b", ShopName: "Shop B", Name: "Sold Out Kit", Grade: "HG", URL: "https://b/sold-out", CurrentCents: 1000, Currency: "USD", Availability: scraper.AvailabilityOutOfStock, LowestCents: 1000, ScrapedAt: "2026-01-03T00:00:00Z"},
-		},
-		shops: []store.Shop{
-			{ID: 1, Slug: "shop-a", Name: "Shop A"},
-			{ID: 2, Slug: "shop-b", Name: "Shop B"},
 		},
 	}
+	shops := fakeShops{
+		{ID: 1, Slug: "shop-a", Name: "Shop A"},
+		{ID: 2, Slug: "shop-b", Name: "Shop B"},
+	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewServer(fs, logger), fs
+	return NewServer(fc, shops, logger), fc
+}
+
+func get(t *testing.T, s *Server, target string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+	return rec
 }
 
 func decodeSearch(t *testing.T, body []byte) []searchResultJSON {
@@ -63,111 +68,58 @@ func decodeSearch(t *testing.T, body []byte) []searchResultJSON {
 	return out
 }
 
-func TestHandleSearch_NoFilter_HidesOutOfStockByDefault(t *testing.T) {
+func TestHandleSearch_ReturnsCatalogRows(t *testing.T) {
 	s, _ := newTestServer()
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/search", nil))
+	rec := get(t, s, "/api/search")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
 	}
 	out := decodeSearch(t, rec.Body.Bytes())
-	if len(out) != 3 {
-		t.Fatalf("len(out) = %d, want 3 (Sold Out Kit hidden by default)", len(out))
+	if len(out) != 2 || out[0].Name != "RX-78-2 Gundam" || out[0].ShopSlug != "shop-a" || out[0].LowestCents != 3500 {
+		t.Fatalf("out = %+v", out)
 	}
-	for _, r := range out {
-		if r.Name == "Sold Out Kit" {
-			t.Fatalf("out = %+v, Sold Out Kit should be hidden by default", out)
+}
+
+func TestFilterFromQuery(t *testing.T) {
+	s, fc := newTestServer()
+	for path, want := range map[string]catalog.Filter{
+		"/api/search": {},
+		"/api/search?q=%20gundam%20&regexp=%5ERX&shop=shop-b&grade=hg": {Query: "gundam", Regexp: "^RX", Shop: "shop-b", Grade: "hg"},
+		"/api/search?show_out_of_stock=1":                              {ShowOutOfStock: true},
+		"/api/products?show_out_of_stock=TRUE&q=zaku":                  {ShowOutOfStock: true, Query: "zaku"},
+		"/api/products?show_out_of_stock=0":                            {},
+	} {
+		get(t, s, path)
+		if fc.lastSeen != want {
+			t.Errorf("%s: filter = %+v, want %+v", path, fc.lastSeen, want)
 		}
 	}
 }
 
-func TestHandleSearch_ShowOutOfStock(t *testing.T) {
-	s, _ := newTestServer()
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/search?show_out_of_stock=1", nil))
-	out := decodeSearch(t, rec.Body.Bytes())
-	if len(out) != 4 {
-		t.Fatalf("show_out_of_stock=1: len(out) = %d, want 4 (all rows including Sold Out Kit)", len(out))
+func TestInvalidFilterIs400OthersAre500(t *testing.T) {
+	s, fc := newTestServer()
+	fc.err = &catalog.InvalidFilterError{Err: errors.New("bad regexp")}
+	for _, path := range []string{"/api/search", "/api/products"} {
+		rec := get(t, s, path)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400; body: %s", path, rec.Code, rec.Body.String())
+		}
+		var body map[string]string
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body["error"] != "bad regexp" {
+			t.Errorf("%s: body = %s", path, rec.Body.String())
+		}
 	}
-}
-
-// A set with unknown stock status (empty Availability, scraper doesn't
-// report it) must never be treated as out of stock.
-func TestHandleSearch_UnknownStockIsNotFilteredAsOutOfStock(t *testing.T) {
-	s, _ := newTestServer()
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/search?q=zaku", nil))
-	out := decodeSearch(t, rec.Body.Bytes())
-	if len(out) != 1 || out[0].Name != "Zaku II" {
-		t.Fatalf("q=zaku: out = %+v, want exactly [Zaku II] (unknown stock status must not be hidden)", out)
-	}
-}
-
-func TestHandleSearch_SubstringFilter(t *testing.T) {
-	s, _ := newTestServer()
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/search?q=gundam", nil))
-	out := decodeSearch(t, rec.Body.Bytes())
-	if len(out) != 2 {
-		t.Fatalf("q=gundam: len(out) = %d, want 2 (case-insensitive match on both Gundams)", len(out))
-	}
-}
-
-func TestHandleSearch_RegexpFilter(t *testing.T) {
-	s, _ := newTestServer()
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/search?regexp=^RX-78", nil))
-	out := decodeSearch(t, rec.Body.Bytes())
-	if len(out) != 1 || out[0].Name != "RX-78-2 Gundam" {
-		t.Fatalf("regexp=^RX-78: out = %+v, want exactly [RX-78-2 Gundam]", out)
-	}
-}
-
-func TestHandleSearch_RegexpIsCaseInsensitive(t *testing.T) {
-	s, _ := newTestServer()
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/search?regexp=zaku", nil))
-	out := decodeSearch(t, rec.Body.Bytes())
-	if len(out) != 1 || out[0].Name != "Zaku II" {
-		t.Fatalf("regexp=zaku (lowercase): out = %+v, want exactly [Zaku II] (case-insensitive match)", out)
-	}
-}
-
-func TestHandleSearch_InvalidRegexp_Returns400(t *testing.T) {
-	s, _ := newTestServer()
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/search?regexp=(unclosed", nil))
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestHandleSearch_ShopFilter(t *testing.T) {
-	s, _ := newTestServer()
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/search?shop=shop-b", nil))
-	out := decodeSearch(t, rec.Body.Bytes())
-	if len(out) != 1 || out[0].ShopSlug != "shop-b" {
-		t.Fatalf("shop=shop-b: out = %+v, want exactly one shop-b row", out)
-	}
-}
-
-func TestHandleSearch_CombinedSubstringAndRegexpAreANDed(t *testing.T) {
-	s, _ := newTestServer()
-	rec := httptest.NewRecorder()
-	// "gundam" substring matches both RX-78-2 and RX-93; the regexp narrows
-	// to just the one starting with "RX-78".
-	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/search?q=gundam&regexp=^RX-78", nil))
-	out := decodeSearch(t, rec.Body.Bytes())
-	if len(out) != 1 || out[0].Name != "RX-78-2 Gundam" {
-		t.Fatalf("q=gundam&regexp=^RX-78: out = %+v, want exactly [RX-78-2 Gundam]", out)
+	fc.err = errors.New("db down")
+	for _, path := range []string{"/api/search", "/api/products"} {
+		if rec := get(t, s, path); rec.Code != http.StatusInternalServerError {
+			t.Errorf("%s: status = %d, want 500", path, rec.Code)
+		}
 	}
 }
 
 func TestHandleShops(t *testing.T) {
 	s, _ := newTestServer()
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/shops", nil))
+	rec := get(t, s, "/api/shops")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
@@ -185,8 +137,7 @@ func TestHandleShops(t *testing.T) {
 
 func TestHandleIndex_ServesHTML(t *testing.T) {
 	s, _ := newTestServer()
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	rec := get(t, s, "/")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
@@ -198,130 +149,55 @@ func TestHandleIndex_ServesHTML(t *testing.T) {
 	}
 }
 
-func TestHandleSearch_GradeFilter(t *testing.T) {
-	s, _ := newTestServer()
-	s.store.(*fakeStore).rows = append(s.store.(*fakeStore).rows,
-		store.SetSearchRow{ShopSlug: "shop-a", ShopName: "Shop A", Name: "Ungraded Pre", URL: "https://a/pre", CurrentCents: 1500, Currency: "EUR", LowestCents: 1500, Availability: scraper.AvailabilityPreorder})
-
-	names := func(query string) []string {
-		t.Helper()
-		rec := httptest.NewRecorder()
-		s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/search?"+query, nil))
-		var got []string
-		for _, r := range decodeSearch(t, rec.Body.Bytes()) {
-			got = append(got, r.Name)
-		}
-		return got
-	}
-
-	if got := names("grade=hg"); len(got) != 1 || got[0] != "Zaku II" {
-		t.Errorf("grade=hg = %v, want [Zaku II] (case-insensitive, sold-out HG hidden)", got)
-	}
-	if got := names("grade=none"); len(got) != 1 || got[0] != "Ungraded Pre" {
-		t.Errorf("grade=none = %v, want [Ungraded Pre]", got)
-	}
-	if got := names("grade=PG"); len(got) != 0 {
-		t.Errorf("grade=PG = %v, want none", got)
-	}
-}
-
-func TestHandleProducts_GroupsListingsAndMarksCheapest(t *testing.T) {
-	s, fs := newTestServer()
-	fs.rows = []store.SetSearchRow{
-		{SetID: 1, ProductID: 7, ProductName: "RX-78-2 Gundam", ShopSlug: "shop-a", ShopName: "Shop A", Name: "MG RX-78-2 Gundam Ver.Ka 1/100", Grade: "MG", URL: "https://a/1", CurrentCents: 9000, Currency: "EUR", LowestCents: 9000, MatchMethod: "name"},
-		{SetID: 2, ProductID: 7, ProductName: "RX-78-2 Gundam", ShopSlug: "shop-b", ShopName: "Shop B", Name: "MG – RX-78-2 Gundam Ver.Ka", Grade: "MG", URL: "https://b/1", CurrentCents: 8500, Currency: "EUR", LowestCents: 8000, MatchMethod: "name"},
-		{SetID: 3, ProductID: 7, ProductName: "RX-78-2 Gundam", ShopSlug: "shop-c", ShopName: "Shop C", Name: "RX-78-2 Gundam Ver.Ka", Grade: "MG", URL: "https://c/1", CurrentCents: 7000, Currency: "EUR", Availability: scraper.AvailabilityOutOfStock, LowestCents: 7000, MatchMethod: "name"},
-		{SetID: 4, ProductID: 8, ProductName: "Zaku II", ShopSlug: "shop-a", ShopName: "Shop A", Name: "HG Zaku II", Grade: "HG", URL: "https://a/2", CurrentCents: 2000, Currency: "EUR", LowestCents: 2000},
-		{SetID: 5, ShopSlug: "shop-a", ShopName: "Shop A", Name: "Unmatched Kit", Grade: "HG", URL: "https://a/3", CurrentCents: 1000, Currency: "EUR", LowestCents: 1000},
-	}
-	get := func(query string) []productJSON {
-		t.Helper()
-		rec := httptest.NewRecorder()
-		s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/products"+query, nil))
-		if rec.Code != http.StatusOK {
-			t.Fatalf("status = %d; body: %s", rec.Code, rec.Body.String())
-		}
-		var out []productJSON
-		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
-			t.Fatal(err)
-		}
-		return out
-	}
-
-	got := get("?show_out_of_stock=1")
-	if len(got) != 3 {
-		t.Fatalf("got %d products, want 3 (grouped, plus 2 singles)", len(got))
-	}
-	if got[0].ProductID != 7 || len(got[0].Listings) != 3 {
-		t.Fatalf("multi-shop product should sort first with 3 listings: %+v", got[0])
-	}
-	for _, l := range got[0].Listings {
-		// The out-of-stock €70 listing is cheaper but can't be bought.
-		if want := l.ShopSlug == "shop-b"; l.Cheapest != want {
-			t.Errorf("%s: cheapest = %v, want %v", l.ShopSlug, l.Cheapest, want)
-		}
-	}
-
-	// Default hides out-of-stock listings, shrinking the group.
-	if got := get(""); len(got[0].Listings) != 2 {
-		t.Errorf("default view has %d listings in group, want 2", len(got[0].Listings))
-	}
-	// A name filter keeps the whole product if one listing matches.
-	if got := get("?q=zaku"); len(got) != 1 || got[0].ProductID != 8 {
-		t.Errorf("q=zaku: %+v", got)
-	}
-	// A bad regexp is a 400, same as /api/search.
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/products?regexp=%28", nil))
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("bad regexp: status = %d, want 400", rec.Code)
-	}
-}
-
-func TestHandleProducts_ConvertsToEURAndComparesAcrossCurrencies(t *testing.T) {
-	s, fs := newTestServer()
+func TestHandleProducts_EncodesProductsAndConvertsToEUR(t *testing.T) {
+	s, fc := newTestServer()
 	s.eurRates = fx.Rates{"USD": 0.9}
-	fs.rows = []store.SetSearchRow{
-		// $100 = €90: cheaper than the €95 listing despite the bigger number.
-		{SetID: 1, ProductID: 7, ShopSlug: "us", ShopName: "US", Name: "Kit", URL: "u1", CurrentCents: 10000, LowestCents: 9000, Currency: "USD"},
-		{SetID: 2, ProductID: 7, ShopSlug: "nl", ShopName: "NL", Name: "Kit", URL: "u2", CurrentCents: 9500, LowestCents: 9500, Currency: "EUR"},
-		// One shop only: nothing to compare, so no cheapest flag.
-		{SetID: 3, ProductID: 8, ShopSlug: "us", ShopName: "US", Name: "Solo", URL: "u3", CurrentCents: 1000, LowestCents: 1000, Currency: "USD"},
+	fc.products = []catalog.Product{
+		{ID: 7, Name: "Kit", Grade: "MG", Listings: []catalog.Listing{
+			{SetSearchRow: store.SetSearchRow{SetID: 1, ProductID: 7, ShopSlug: "us", ShopName: "US", Name: "Kit", URL: "u1", CurrentCents: 10000, LowestCents: 9000, Currency: "USD", MatchMethod: "ean"}, Cheapest: true},
+			{SetSearchRow: store.SetSearchRow{SetID: 2, ProductID: 7, ShopSlug: "nl", ShopName: "NL", Name: "Kit", URL: "u2", CurrentCents: 9500, LowestCents: 9500, Currency: "EUR"}},
+		}},
+		{Name: "Solo", Listings: []catalog.Listing{
+			{SetSearchRow: store.SetSearchRow{SetID: 3, ShopSlug: "us", Name: "Solo", URL: "u3", CurrentCents: 1000, LowestCents: 1000, Currency: "USD"}},
+		}},
 	}
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/products", nil))
+	rec := get(t, s, "/api/products")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; body: %s", rec.Code, rec.Body.String())
+	}
 	var got []productJSON
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 {
-		t.Fatalf("got %d products, want 2", len(got))
+	if len(got) != 2 || got[0].ProductID != 7 || got[0].Name != "Kit" || got[0].Grade != "MG" || len(got[0].Listings) != 2 {
+		t.Fatalf("products = %+v", got)
 	}
-	for _, l := range got[0].Listings {
-		if l.Currency != "EUR" {
-			t.Errorf("%s: currency = %q, want EUR", l.ShopSlug, l.Currency)
-		}
-		if l.ShopSlug == "us" {
-			if l.CurrentCents != 9000 || l.LowestCents != 8100 || l.OriginalCents != 10000 || l.OriginalCurrency != "USD" {
-				t.Errorf("converted listing = %+v", l)
-			}
-		}
-		if want := l.ShopSlug == "us"; l.Cheapest != want {
-			t.Errorf("%s: cheapest = %v, want %v", l.ShopSlug, l.Cheapest, want)
-		}
+	us := got[0].Listings[0]
+	if us.SetID != 1 || us.MatchMethod != "ean" || !us.Cheapest ||
+		us.Currency != "EUR" || us.CurrentCents != 9000 || us.LowestCents != 8100 || us.OriginalCents != 10000 || us.OriginalCurrency != "USD" {
+		t.Errorf("converted listing = %+v", us)
 	}
-	if solo := got[1].Listings[0]; solo.Cheapest || solo.CurrentCents != 900 {
-		t.Errorf("single-shop kit: %+v (want EUR 9.00, not cheapest)", solo)
+	if nl := got[0].Listings[1]; nl.Cheapest || nl.CurrentCents != 9500 || nl.OriginalCurrency != "" {
+		t.Errorf("EUR listing = %+v", nl)
+	}
+	if solo := got[1]; solo.ProductID != 0 || solo.Listings[0].CurrentCents != 900 {
+		t.Errorf("single-listing product = %+v", solo)
+	}
+}
+
+func TestHandleProducts_EmptyIsAnEmptyArray(t *testing.T) {
+	s, _ := newTestServer()
+	rec := get(t, s, "/api/products")
+	if body := rec.Body.String(); body != "[]\n" {
+		t.Errorf("body = %q, want []", body)
 	}
 }
 
 func TestHandleSearch_ConvertsToEUR(t *testing.T) {
 	s, _ := newTestServer()
 	s.eurRates = fx.Rates{"USD": 0.5}
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/search?q=nu", nil))
-	got := decodeSearch(t, rec.Body.Bytes())
-	if len(got) != 1 || got[0].Currency != "EUR" || got[0].CurrentCents != 1500 {
+	got := decodeSearch(t, get(t, s, "/api/search").Body.Bytes())
+	if len(got) != 2 || got[1].Currency != "EUR" || got[1].CurrentCents != 1500 {
 		t.Errorf("got %+v, want the $30.00 Nu Gundam as EUR 15.00", got)
 	}
 }

@@ -8,51 +8,39 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
-	"gunpla-collector/internal/matcher"
-	"gunpla-collector/internal/store"
+	"gunpla-collector/internal/catalog"
 )
 
 // maxSuggestions caps the near-miss list printed by `match`.
 const maxSuggestions = 15
 
-// matchAll groups every listing into products and stores the result.
-func matchAll(ctx context.Context, db *store.Store) (store.MatchStats, []matcher.Suggestion, error) {
-	listings, err := db.MatchListings(ctx)
-	if err != nil {
-		return store.MatchStats{}, nil, err
-	}
-	groups, suggestions := matcher.Match(listings)
-	stats, err := db.ApplyMatches(ctx, listings, groups, time.Now().UTC().Format(time.RFC3339))
-	return stats, suggestions, err
-}
-
 // matchAfterCollect runs at the end of `collect`, so reports and the search
 // UI always see products that include the listings just scraped. It is
 // best-effort: a matching problem is logged but never turns a successful
 // scrape into a failed collect run.
-func matchAfterCollect(ctx context.Context, db *store.Store, logger *slog.Logger) {
-	stats, suggestions, err := matchAll(ctx, db)
+func matchAfterCollect(ctx context.Context, cat *catalog.Catalog, logger *slog.Logger) {
+	rep, err := cat.Regroup(ctx)
 	if err != nil {
 		logger.Error("match failed (listings are collected, but product grouping is stale)", "error", err)
 		return
 	}
-	logger.Info("match complete", "listings", stats.ListingCount, "products", stats.Products,
-		"multi_shop", stats.MultiShop, "reassigned", stats.Reassigned, "near_misses", len(suggestions))
+	logger.Info("match complete", "listings", rep.Listings, "products", rep.Products,
+		"multi_shop", rep.MultiShop, "reassigned", rep.Reassigned, "near_misses", len(rep.Suggestions))
 }
 
 // runMatch is the `match` command: group everything and print what it did —
 // totals, then the near-miss pairs it declined to link so they can be
 // confirmed with `link`.
-func runMatch(ctx context.Context, db *store.Store, out io.Writer) error {
-	stats, suggestions, err := matchAll(ctx, db)
+func runMatch(ctx context.Context, cat *catalog.Catalog, out io.Writer) error {
+	stats, err := cat.Regroup(ctx)
 	if err != nil {
 		return err
 	}
+	suggestions := stats.Suggestions
 
 	var b strings.Builder // one write at the end, so there's a single error to check
-	fmt.Fprintf(&b, "listings:            %d\n", stats.ListingCount)
+	fmt.Fprintf(&b, "listings:            %d\n", stats.Listings)
 	fmt.Fprintf(&b, "products:            %d (%d listed by 2+ shops)\n", stats.Products, stats.MultiShop)
 	fmt.Fprintf(&b, "created / removed:   %d / %d products, %d listings reassigned\n", stats.Created, stats.Removed, stats.Reassigned)
 	methods := make([]string, 0, len(stats.ByMethod))
@@ -80,7 +68,7 @@ func runMatch(ctx context.Context, db *store.Store, out io.Writer) error {
 }
 
 // runLink handles `link <a> <b>` and `unlink <id>`.
-func runLink(ctx context.Context, db *store.Store, cmd string, args []string) error {
+func runLink(ctx context.Context, cat *catalog.Catalog, cmd string, args []string) error {
 	want := 2
 	if cmd == "unlink" {
 		want = 1
@@ -97,7 +85,7 @@ func runLink(ctx context.Context, db *store.Store, cmd string, args []string) er
 		ids[i] = id
 	}
 	if cmd == "unlink" {
-		return db.UnlinkSet(ctx, ids[0], time.Now().UTC().Format(time.RFC3339))
+		return cat.Unlink(ctx, ids[0])
 	}
-	return db.LinkSets(ctx, ids[0], ids[1])
+	return cat.Link(ctx, ids[0], ids[1])
 }
