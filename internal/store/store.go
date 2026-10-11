@@ -199,14 +199,16 @@ func (s *Store) LastSuccessfulRunSetsFound(ctx context.Context, shopID int64) (i
 
 // UpsertSet inserts a new set or updates an existing one (matched on
 // shop_id+external_id), reactivating it if it was previously removed.
-// ean and sku may be empty; empty values are stored as NULL, not "".
+// ean and sku may be empty; empty values are stored as NULL, not "". An
+// empty ean on an update keeps the stored one: listings that omit
+// barcodes shouldn't wipe what a barcode lookup found.
 func (s *Store) UpsertSet(ctx context.Context, shopID int64, externalID, url, name, grade, ean, sku, now string) (int64, error) {
 	row := s.conn.QueryRowContext(ctx,
 		`INSERT INTO sets (shop_id, external_id, url, name, grade, ean, sku, first_seen_at, last_seen_at, is_active, removed_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL)
 		 ON CONFLICT(shop_id, external_id) DO UPDATE SET
 		   url = excluded.url, name = excluded.name, grade = excluded.grade,
-		   ean = excluded.ean, sku = excluded.sku,
+		   ean = COALESCE(excluded.ean, sets.ean), sku = excluded.sku,
 		   last_seen_at = excluded.last_seen_at, is_active = 1, removed_at = NULL
 		 RETURNING id`,
 		shopID, externalID, url, name, grade, nullIfEmpty(ean), nullIfEmpty(sku), now, now)
@@ -251,18 +253,26 @@ func (s *Store) EANChecks(ctx context.Context, shopID int64) (map[string]EANChec
 	return out, rows.Err()
 }
 
-// MarkEANChecked records that a barcode lookup ran at now for these sets
-// of shopID, whether or not it found one.
-func (s *Store) MarkEANChecked(ctx context.Context, shopID int64, externalIDs []string, now string) error {
+// EANLookup is the outcome of one barcode lookup.
+type EANLookup struct {
+	ExternalID string
+	EAN        string // "" if the shop has none
+}
+
+// RecordEANLookups stores what barcode lookups found for sets of shopID
+// and stamps each as checked at now, whether or not it found one. A set
+// whose lookup found nothing keeps any barcode it already had.
+func (s *Store) RecordEANLookups(ctx context.Context, shopID int64, lookups []EANLookup, now string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback() // no-op once committed
-	for _, id := range externalIDs {
+	for _, l := range lookups {
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE sets SET ean_checked_at = ? WHERE shop_id = ? AND external_id = ?`, now, shopID, id); err != nil {
-			return fmt.Errorf("mark ean checked for %s: %w", id, err)
+			`UPDATE sets SET ean = COALESCE(?, ean), ean_checked_at = ? WHERE shop_id = ? AND external_id = ?`,
+			nullIfEmpty(l.EAN), now, shopID, l.ExternalID); err != nil {
+			return fmt.Errorf("record ean lookup for %s: %w", l.ExternalID, err)
 		}
 	}
 	return tx.Commit()
