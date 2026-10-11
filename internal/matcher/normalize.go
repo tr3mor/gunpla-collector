@@ -25,7 +25,7 @@ type Key struct {
 }
 
 var (
-	reScale = regexp.MustCompile(`\b(?:1|re)\s*/\s*\d+\b`)
+	reScale = regexp.MustCompile(`\b(?:1|re)\s*[/:]\s*\d+\b`)
 	reVer   = regexp.MustCompile(`\bver(?:sion)?\b\.?\s*([a-z0-9][a-z0-9.]*)`)
 	reMk    = regexp.MustCompile(`\bmk[\s.\-]*(iii|ii|iv|v|[0-9])\b`)
 	// A model number: 1-5 letters, optional hyphen, a digit run, then any

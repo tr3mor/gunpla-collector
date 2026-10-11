@@ -1,6 +1,7 @@
 package matcher
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -225,25 +226,36 @@ func Match(listings []Listing) ([]Group, []Suggestion) {
 // score rates how likely two listings are the same kit (0..1) and whether
 // that is high enough to link them automatically.
 func score(a, b *entry) (float64, bool) {
+	sc, ok, _ := judge(a, b)
+	return sc, ok
+}
+
+// judge is score plus a human-readable reason for the verdict, which the
+// near-miss review page shows so a wrong verdict can be traced to the
+// words or thresholds behind it.
+func judge(a, b *entry) (float64, bool, string) {
 	if a.Grade != "" && b.Grade != "" && !strings.EqualFold(a.Grade, b.Grade) {
-		return 0, false
+		return 0, false, "different grades (" + a.Grade + " vs " + b.Grade + ")"
 	}
 	if !equal(a.key.Distinct, b.key.Distinct) {
-		return 0, false
+		return 0, false, "version words differ: " + words(a.key.Distinct) + " vs " + words(b.key.Distinct)
 	}
 	ka, kb := a.key, b.key
 	if ka.Model != "" && kb.Model != "" {
 		if ka.Model != kb.Model {
-			return 0, false
+			return 0, false, "different model numbers (" + ka.Model + " vs " + kb.Model + ")"
 		}
 		switch {
 		case len(ka.Tokens) == 0 && len(kb.Tokens) == 0:
-			return 1, true
+			return 1, true, "same model number, no other words"
 		case len(ka.Tokens) == 0 || len(kb.Tokens) == 0:
-			return suggestFloor, false // one name has extra words we can't judge
+			return suggestFloor, false, "same model number, but only one name has more words (" + words(append(append([]string{}, ka.Tokens...), kb.Tokens...)) + ")"
 		}
 		o, j := overlap(ka.Tokens, kb.Tokens), jaccard(ka.Tokens, kb.Tokens)
-		return (o + j) / 2, o >= overlapAccept && j >= overlapJaccardAccept
+		if o >= overlapAccept && j >= overlapJaccardAccept {
+			return (o + j) / 2, true, "same model number, similar words"
+		}
+		return (o + j) / 2, false, fmt.Sprintf("same model number, but the words differ too much (overlap %.2f needs %.2f, similarity %.2f needs %.2f)", o, overlapAccept, j, overlapJaccardAccept)
 	}
 	oneModel := (ka.Model != "") != (kb.Model != "")
 	// A model number on one side makes even a one-word name ("Shining")
@@ -253,10 +265,21 @@ func score(a, b *entry) (float64, bool) {
 		minTokens = 1
 	}
 	if len(ka.Tokens) < minTokens || len(kb.Tokens) < minTokens {
-		return 0, false
+		return 0, false, "too few words to judge without a shared model number"
 	}
 	s := jaccard(ka.Tokens, kb.Tokens)
-	return s, s >= jaccardAccept
+	if s >= jaccardAccept {
+		return s, true, "similar words"
+	}
+	why := "no shared model number, and the words are only"
+	return s, false, fmt.Sprintf("%s %.2f similar (needs %.2f)", why, s, jaccardAccept)
+}
+
+func words(w []string) string {
+	if len(w) == 0 {
+		return "[]"
+	}
+	return "[" + strings.Join(w, " ") + "]"
 }
 
 func intersect(a, b []string) int {

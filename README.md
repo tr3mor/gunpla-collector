@@ -2,7 +2,8 @@
 
 Tracks Gunpla model kit inventory and prices at online shops over time,
 sends a daily Telegram summary of what's new, removed, or changed price,
-and serves a small web UI for searching the current catalog.
+and serves a small web UI for searching the current catalog, watching
+kits for a target price or restock, and reviewing near-miss matches.
 
 Supported shops:
 - [GeeksHeaven](https://www.geeksheaven.nl/gundam-model-kits/)
@@ -16,9 +17,12 @@ Supported shops:
 |---------|--------------|
 | `collect [--shop=<slug>] [--force]` | Fetch each shop's current catalog and store a price snapshot. Refuses a run that drops more than half the catalog unless `--force` is given. |
 | `report [--shop=<slug>]` | Send a Telegram message with new, removed, and re-priced sets (plus newly opened pre-orders) since the last report. Warns if the latest `collect` failed. |
-| `serve [--addr=:8080]` | Serve a read-only search UI over the database. No authentication — trusted networks only. |
+| `serve [--addr=:8080]` | Serve the web UI: search, watches, and near-miss review. Reading has no authentication — trusted networks only; set `GUNPLA_UI_TOKEN` to require a token for changes. |
 | `match` | Group the same kit across shops into products. Runs automatically at the end of `collect`. |
 | `link <a> <b>` / `unlink <id>` | Manually fix a wrong or missed grouping. |
+
+`report` also sends one "Watchlist" message for the watches you set up in the
+UI (see [Watches](docs/ARCHITECTURE.md#watches)).
 
 Without `--shop`, commands run against every active shop. Run any command
 with `--help` for details.
@@ -42,6 +46,7 @@ with `--help` for details.
 | `GUNPLA_RUN_TIMEOUT`        | `60m` (collect) / `5m` (report) | Go duration string                             |
 | `GUNPLA_FORCE`              | unset                           | same as `collect --force`                      |
 | `GUNPLA_UI_ADDR`            | `:8080`                         | `serve` listen address                         |
+| `GUNPLA_UI_TOKEN`           | unset                           | if set, changes made in the UI need this token |
 | `GUNPLA_USD_EUR_RATE`       | `0.89`                          | fallback rate if the live ECB rate is unreachable |
 
 ## Running with Docker

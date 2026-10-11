@@ -117,7 +117,7 @@ func run(args []string) error {
 	}
 
 	if cmd == "serve" {
-		return serve(ctx, db, logger, addrFlag(flags.addr, cfg.UIAddr), fx.Load(ctx, cfg.USDToEUR, logger))
+		return serve(ctx, db, logger, addrFlag(flags.addr, cfg.UIAddr), cfg.UIToken, fx.Load(ctx, cfg.USDToEUR, logger))
 	}
 
 	sigCtx := ctx // outlives the run timeout, which a long collect may exhaust
@@ -285,10 +285,10 @@ func addrFlag(flagVal, cfgDefault string) string {
 // serve runs the search UI's HTTP server until ctx is cancelled (SIGINT/SIGTERM),
 // then shuts it down gracefully. Unlike collect/report, it has no run-timeout —
 // it's meant to stay up.
-func serve(ctx context.Context, db *store.Store, logger *slog.Logger, addr string, rates fx.Rates) error {
+func serve(ctx context.Context, db *store.Store, logger *slog.Logger, addr, writeToken string, rates fx.Rates) error {
 	srv := &http.Server{
 		Addr:    addr,
-		Handler: web.NewServer(catalog.New(db, catalog.WithEURRates(rates)), db, logger, web.WithEURRates(rates)).Handler(),
+		Handler: web.NewServer(catalog.New(db, catalog.WithEURRates(rates)), db, logger, web.WithEURRates(rates), web.WithWriteToken(writeToken)).Handler(),
 	}
 
 	errCh := make(chan error, 1)
