@@ -164,14 +164,25 @@ func run(args []string) error {
 		tg := telegram.NewClient(cfg.TelegramToken, cfg.TelegramChatID)
 		rates := fx.Load(ctx, cfg.USDToEUR, logger)
 		var firstErr error
+		unchanged := 0
 		for _, shop := range shops {
 			logger.Info("starting report", "shop", shop.Slug)
-			if err := reporter.Run(ctx, db, shop, tg, logger, reporter.WithEURRates(rates)); err != nil {
+			outcome, err := reporter.Run(ctx, db, shop, tg, logger, reporter.WithEURRates(rates))
+			if err != nil {
 				logger.Error("report failed", "shop", shop.Slug, "error", err)
 				if firstErr == nil {
 					firstErr = err
 				}
 				continue
+			}
+			if outcome == reporter.Unchanged {
+				unchanged++
+			}
+		}
+		// Shops without changes stay silent; if that was every shop, say so once.
+		if unchanged == len(shops) && firstErr == nil {
+			if err := telegram.SendLong(ctx, tg, reporter.FormatNoChanges()); err != nil {
+				return fmt.Errorf("send no-changes message: %w", err)
 			}
 		}
 		return firstErr

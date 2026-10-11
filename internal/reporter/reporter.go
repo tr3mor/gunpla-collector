@@ -53,7 +53,21 @@ type options struct{ rates fx.Rates }
 // Store's USD) converted to EUR.
 func WithEURRates(r fx.Rates) Option { return func(o *options) { o.rates = r } }
 
-func Run(ctx context.Context, db Store, shop store.Shop, sender telegram.Sender, logger *slog.Logger, opts ...Option) error {
+// Outcome says what Run did for a shop, so the caller can decide whether a
+// combined "no changes" message is warranted.
+type Outcome int
+
+const (
+	// Skipped: nothing new to report (or only a failure alert was sent).
+	Skipped Outcome = iota
+	// Reported: a baseline or diff message was sent.
+	Reported
+	// Unchanged: a new run was compared and nothing differed. No message is
+	// sent per shop; the caller reports it once across all shops.
+	Unchanged
+)
+
+func Run(ctx context.Context, db Store, shop store.Shop, sender telegram.Sender, logger *slog.Logger, opts ...Option) (Outcome, error) {
 	var o options
 	for _, opt := range opts {
 		opt(&o)
@@ -61,33 +75,34 @@ func Run(ctx context.Context, db Store, shop store.Shop, sender telegram.Sender,
 
 	latest, ok, err := db.LatestRun(ctx, shop.ID)
 	if err != nil {
-		return fmt.Errorf("find latest run: %w", err)
+		return Skipped, fmt.Errorf("find latest run: %w", err)
 	}
 	if !ok {
-		return fmt.Errorf("no collect run yet for %s — run `collect` first", shop.Slug)
+		return Skipped, fmt.Errorf("no collect run yet for %s — run `collect` first", shop.Slug)
 	}
 
 	alerted := false
 	if reason, stuck := failureReason(latest); stuck {
 		logger.Warn("collect run failed or appears stuck", "shop", shop.Slug, "run_id", latest.ID, "status", latest.Status)
 		if err := telegram.SendLong(ctx, sender, FormatFailure(shop.Name, reason)); err != nil {
-			return fmt.Errorf("send failure alert: %w", err)
+			return Skipped, fmt.Errorf("send failure alert: %w", err)
 		}
 		alerted = true
 	}
 
 	current, previous, err := db.LatestUnreportedRun(ctx, shop.ID)
 	if err != nil {
-		return fmt.Errorf("find unreported run: %w", err)
+		return Skipped, fmt.Errorf("find unreported run: %w", err)
 	}
 	if current == nil {
 		if !alerted {
 			logger.Info("nothing new to report", "shop", shop.Slug)
 		}
-		return nil
+		return Skipped, nil
 	}
 
 	var msg string
+	outcome := Reported
 	if previous == nil {
 		setsFound := 0
 		if current.SetsFound.Valid {
@@ -98,32 +113,38 @@ func Run(ctx context.Context, db Store, shop store.Shop, sender telegram.Sender,
 	} else {
 		newSets, err := db.NewSets(ctx, shop.ID, current.ID, previous.ID)
 		if err != nil {
-			return fmt.Errorf("query new sets: %w", err)
+			return Skipped, fmt.Errorf("query new sets: %w", err)
 		}
 		removedSets, err := db.RemovedSets(ctx, shop.ID, current.ID, previous.ID)
 		if err != nil {
-			return fmt.Errorf("query removed sets: %w", err)
+			return Skipped, fmt.Errorf("query removed sets: %w", err)
 		}
 		changes, err := db.PriceChanges(ctx, shop.ID, current.ID, previous.ID)
 		if err != nil {
-			return fmt.Errorf("query price changes: %w", err)
+			return Skipped, fmt.Errorf("query price changes: %w", err)
 		}
 		newSets, removedSets, changes = convertItems(o.rates, newSets), convertItems(o.rates, removedSets), convertChanges(o.rates, changes)
 		reportableChanges := filterReportableChanges(changes)
 		logger.Info("reporting diff", "shop", shop.Slug, "new", len(newSets), "removed", len(removedSets),
 			"changed", len(reportableChanges), "changed_filtered_out", len(changes)-len(reportableChanges))
-		msg = FormatDiff(shop.Name, newSets, removedSets, reportableChanges)
+		if len(newSets) == 0 && len(removedSets) == 0 && len(reportableChanges) == 0 {
+			outcome = Unchanged
+		} else {
+			msg = FormatDiff(shop.Name, newSets, removedSets, reportableChanges)
+		}
 	}
 
-	if err := telegram.SendLong(ctx, sender, msg); err != nil {
-		return fmt.Errorf("send report: %w", err)
+	if outcome == Reported {
+		if err := telegram.SendLong(ctx, sender, msg); err != nil {
+			return Skipped, fmt.Errorf("send report: %w", err)
+		}
 	}
 	// Only stamp once the send succeeds, so a failed send is retried next time.
 	now := time.Now().UTC().Format(time.RFC3339)
 	if err := db.MarkReported(ctx, shop.ID, now); err != nil {
-		return fmt.Errorf("mark reported: %w", err)
+		return Skipped, fmt.Errorf("mark reported: %w", err)
 	}
-	return nil
+	return outcome, nil
 }
 
 func convertItems(r fx.Rates, items []store.ReportItem) []store.ReportItem {
