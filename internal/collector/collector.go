@@ -25,6 +25,10 @@ const (
 	// maxEANLookupFailures in a row ends this run's lookups: the shop is
 	// likely down or blocking, and each failure already waited out retries.
 	maxEANLookupFailures = 3
+	// eanFlushEvery is how many lookups are held in memory before they're
+	// saved, so a run that dies partway through a long backfill loses at
+	// most this many.
+	eanFlushEvery = 25
 )
 
 // Options controls one collect run's behavior beyond the shop/scraper it
@@ -44,10 +48,10 @@ type Store interface {
 	// operation: upsert sets, record price history, deactivate sets no
 	// longer seen, and mark the run successful.
 	ApplyRun(ctx context.Context, shopID, runID int64, sets []scraper.ScrapedSet, now string) error
-	// EANChecks and MarkEANChecked back barcode lookups for scrapers
+	// EANChecks and RecordEANLookups back barcode lookups for scrapers
 	// implementing scraper.BarcodeLookup.
 	EANChecks(ctx context.Context, shopID int64) (map[string]store.EANCheck, error)
-	MarkEANChecked(ctx context.Context, shopID int64, externalIDs []string, now string) error
+	RecordEANLookups(ctx context.Context, shopID int64, lookups []store.EANLookup, now string) error
 }
 
 func Run(ctx context.Context, db Store, shop store.Shop, s scraper.Scraper, logger *slog.Logger, opts Options) error {
@@ -89,60 +93,65 @@ func Run(ctx context.Context, db Store, shop store.Shop, s scraper.Scraper, logg
 			"shop", shop.Slug, "sets_found", len(sets), "previous_sets_found", prevCount)
 	}
 
-	var eanChecked []string
-	if l, ok := s.(scraper.BarcodeLookup); ok {
-		eanChecked = lookupEANs(ctx, db, shop, l, sets, logger)
-	}
-
 	if err := db.ApplyRun(ctx, shop.ID, runID, sets, now()); err != nil {
 		_ = db.FinishRunFailed(ctx, runID, now(), err.Error())
 		return fmt.Errorf("apply run for %s: %w", shop.Slug, err)
 	}
 
-	// After ApplyRun, so sets first seen in this run exist to be marked.
-	// Losing this only means those sets are looked up again next run.
-	if len(eanChecked) > 0 {
-		if err := db.MarkEANChecked(ctx, shop.ID, eanChecked, now()); err != nil {
-			logger.Warn("record barcode lookups failed", "shop", shop.Slug, "err", err)
-		}
-	}
-
 	logger.Info("collect run complete", "shop", shop.Slug, "sets_found", len(sets), "run_id", runID)
+
+	// After ApplyRun, so the run is already saved if a long backfill is cut
+	// short, and sets first seen in this run exist to record barcodes on.
+	// Failures here never fail the run: a missing barcode only weakens
+	// cross-shop matching.
+	if l, ok := s.(scraper.BarcodeLookup); ok {
+		lookupEANs(ctx, db, shop, l, sets, logger)
+	}
 	return nil
 }
 
-// lookupEANs fills in barcodes the listing left out: the stored one for a
-// set that has one, a fresh lookup for a set never looked up or last
-// looked up over eanRecheckAfter ago. It returns the external ids it
-// looked up, found or not. Failures are logged, never fatal: a
-// missing barcode only weakens cross-shop matching.
-func lookupEANs(ctx context.Context, db Store, shop store.Shop, l scraper.BarcodeLookup, sets []scraper.ScrapedSet, logger *slog.Logger) []string {
+// lookupEANs fills in barcodes the listing left out: every set with no
+// barcode that was never looked up, or last looked up over
+// eanRecheckAfter ago, is looked up and the result saved in batches. A
+// run cut short (timeout, signal, crash) keeps what it saved, and the next
+// run carries on with the rest. Failures are logged, never fatal.
+func lookupEANs(ctx context.Context, db Store, shop store.Shop, l scraper.BarcodeLookup, sets []scraper.ScrapedSet, logger *slog.Logger) {
 	known, err := db.EANChecks(ctx, shop.ID)
 	if err != nil {
 		logger.Warn("skipping barcode lookups", "shop", shop.Slug, "err", err)
-		return nil
+		return
 	}
 	recheckBefore := time.Now().UTC().Add(-eanRecheckAfter).Format(time.RFC3339)
 
-	var checked []string
-	found, failed, failures := 0, 0, 0 // failures: in a row
-	for i := range sets {
-		sc := &sets[i]
-		if sc.EAN != "" {
-			continue
+	var pending []store.EANLookup
+	flush := func() {
+		if len(pending) == 0 {
+			return
 		}
-		k := known[sc.ExternalID]
+		// Detached from ctx: a cancelled run should still save what it has.
+		saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		if err := db.RecordEANLookups(saveCtx, shop.ID, pending, time.Now().UTC().Format(time.RFC3339)); err != nil {
+			logger.Warn("record barcode lookups failed, will retry", "shop", shop.Slug, "err", err)
+			return // keep pending for the next flush
+		}
+		pending = pending[:0]
+	}
+
+	looked, found, failed, failures := 0, 0, 0, 0 // failures: in a row
+	for i := range sets {
+		sc := sets[i]
+		k := known[sc.ExternalID] // includes a barcode the listing itself carried
 		if k.EAN != "" {
-			sc.EAN = k.EAN // keep it: ApplyRun overwrites the stored EAN
 			continue
 		}
 		if k.CheckedAt != "" && k.CheckedAt >= recheckBefore {
 			continue
 		}
 		if failures >= maxEANLookupFailures || ctx.Err() != nil {
-			continue // keep going: later sets may still have a stored EAN to fill in
+			break
 		}
-		ean, err := l.LookupEAN(ctx, *sc)
+		ean, err := l.LookupEAN(ctx, sc)
 		if err != nil {
 			failed++
 			failures++
@@ -150,14 +159,17 @@ func lookupEANs(ctx context.Context, db Store, shop store.Shop, l scraper.Barcod
 			continue
 		}
 		failures = 0
-		checked = append(checked, sc.ExternalID)
+		looked++
 		if ean != "" {
-			sc.EAN = ean
 			found++
 		}
+		pending = append(pending, store.EANLookup{ExternalID: sc.ExternalID, EAN: ean})
+		if len(pending) >= eanFlushEvery {
+			flush()
+		}
 	}
-	if len(checked) > 0 || failed > 0 {
-		logger.Info("barcode lookups", "shop", shop.Slug, "looked_up", len(checked), "found", found, "failed", failed)
+	flush()
+	if looked > 0 || failed > 0 {
+		logger.Info("barcode lookups", "shop", shop.Slug, "looked_up", looked, "found", found, "failed", failed)
 	}
-	return checked
 }

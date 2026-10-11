@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"gunpla-collector/internal/catalog"
 	"gunpla-collector/internal/collector"
 	"gunpla-collector/internal/config"
 	"gunpla-collector/internal/fx"
@@ -110,9 +111,9 @@ func run(args []string) error {
 
 	switch cmd {
 	case "match":
-		return runMatch(ctx, db, os.Stdout)
+		return runMatch(ctx, catalog.New(db), os.Stdout)
 	case "link", "unlink":
-		return runLink(ctx, db, cmd, flags.args)
+		return runLink(ctx, catalog.New(db), cmd, flags.args)
 	}
 
 	if cmd == "serve" {
@@ -149,7 +150,7 @@ func run(args []string) error {
 		// Group the fresh listings into products before `report` runs.
 		matchCtx, cancelMatch := context.WithTimeout(sigCtx, matchTimeout)
 		defer cancelMatch()
-		matchAfterCollect(matchCtx, db, logger)
+		matchAfterCollect(matchCtx, catalog.New(db), logger)
 		return firstErr
 
 	case "report":
@@ -287,7 +288,7 @@ func addrFlag(flagVal, cfgDefault string) string {
 func serve(ctx context.Context, db *store.Store, logger *slog.Logger, addr string, rates fx.Rates) error {
 	srv := &http.Server{
 		Addr:    addr,
-		Handler: web.NewServer(db, logger, web.WithEURRates(rates)).Handler(),
+		Handler: web.NewServer(catalog.New(db, catalog.WithEURRates(rates)), db, logger, web.WithEURRates(rates)).Handler(),
 	}
 
 	errCh := make(chan error, 1)

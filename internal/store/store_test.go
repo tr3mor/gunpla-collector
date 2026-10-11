@@ -217,8 +217,8 @@ func TestEANChecks_RoundTrip(t *testing.T) {
 	if _, err := s.UpsertSet(ctx, shop.ID, "ext-2", "u2", "Kit Two", "MG", "", "", "2026-01-01T00:00:00Z"); err != nil {
 		t.Fatalf("UpsertSet: %v", err)
 	}
-	if err := s.MarkEANChecked(ctx, shop.ID, []string{"ext-2"}, "2026-01-02T00:00:00Z"); err != nil {
-		t.Fatalf("MarkEANChecked: %v", err)
+	if err := s.RecordEANLookups(ctx, shop.ID, []EANLookup{{ExternalID: "ext-2"}}, "2026-01-02T00:00:00Z"); err != nil {
+		t.Fatalf("RecordEANLookups: %v", err)
 	}
 
 	got, err := s.EANChecks(ctx, shop.ID)
@@ -231,6 +231,50 @@ func TestEANChecks_RoundTrip(t *testing.T) {
 	}
 	if len(got) != len(want) || got["ext-1"] != want["ext-1"] || got["ext-2"] != want["ext-2"] {
 		t.Errorf("EANChecks = %+v, want %+v", got, want)
+	}
+}
+
+// A lookup that finds a barcode stores it; one that finds none leaves an
+// existing barcode alone; and a later listing without a barcode doesn't
+// wipe either.
+func TestRecordEANLookups_StoresFoundAndKeepsExisting(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	shop, err := s.GetOrCreateShop(ctx, "test-shop", "Test Shop", "https://example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"ext-1", "ext-2", "ext-3"} {
+		if _, err := s.UpsertSet(ctx, shop.ID, id, "u", "Kit "+id, "MG", "", "", "2026-01-01T00:00:00Z"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.RecordEANLookups(ctx, shop.ID, []EANLookup{{ExternalID: "ext-1", EAN: "4573102638236"}, {ExternalID: "ext-2"}}, "2026-01-02T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	// ext-1 looked up again and found nothing this time: keeps its barcode.
+	if err := s.RecordEANLookups(ctx, shop.ID, []EANLookup{{ExternalID: "ext-1"}}, "2026-01-03T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	// The next collect's listing carries no barcodes at all.
+	for _, id := range []string{"ext-1", "ext-2", "ext-3"} {
+		if _, err := s.UpsertSet(ctx, shop.ID, id, "u", "Kit "+id, "MG", "", "", "2026-01-04T00:00:00Z"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.EANChecks(ctx, shop.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]EANCheck{
+		"ext-1": {EAN: "4573102638236", CheckedAt: "2026-01-03T00:00:00Z"},
+		"ext-2": {CheckedAt: "2026-01-02T00:00:00Z"},
+		"ext-3": {},
+	}
+	for id, w := range want {
+		if got[id] != w {
+			t.Errorf("%s: %+v, want %+v", id, got[id], w)
+		}
 	}
 }
 

@@ -43,7 +43,7 @@ type fakeStore struct {
 	upsertCalls     int
 	eans            map[string]string // external id -> EAN as last applied
 	eanChecks       map[string]store.EANCheck
-	markCalls       [][]string
+	recordCalls     [][]store.EANLookup
 }
 
 func newFakeStore() *fakeStore {
@@ -68,12 +68,15 @@ func (f *fakeStore) EANChecks(ctx context.Context, shopID int64) (map[string]sto
 	return out, nil
 }
 
-func (f *fakeStore) MarkEANChecked(ctx context.Context, shopID int64, externalIDs []string, now string) error {
-	f.markCalls = append(f.markCalls, externalIDs)
-	for _, id := range externalIDs {
-		c := f.eanChecks[id]
+func (f *fakeStore) RecordEANLookups(ctx context.Context, shopID int64, lookups []store.EANLookup, now string) error {
+	f.recordCalls = append(f.recordCalls, append([]store.EANLookup(nil), lookups...))
+	for _, l := range lookups {
+		if l.EAN != "" {
+			f.eans[l.ExternalID] = l.EAN
+		}
+		c := f.eanChecks[l.ExternalID]
 		c.CheckedAt = now
-		f.eanChecks[id] = c
+		f.eanChecks[l.ExternalID] = c
 	}
 	return nil
 }
@@ -120,7 +123,9 @@ func (f *fakeStore) ApplyRun(ctx context.Context, shopID, runID int64, sets []sc
 			id = f.nextSetID
 			f.setIDByExtID[sc.ExternalID] = id
 		}
-		f.eans[sc.ExternalID] = sc.EAN
+		if sc.EAN != "" || f.eans[sc.ExternalID] == "" {
+			f.eans[sc.ExternalID] = sc.EAN // an empty listing barcode keeps the stored one
+		}
 		f.priceHistory = append(f.priceHistory, priceRecord{setID: id, runID: runID, priceCents: sc.PriceCents, availability: sc.Availability})
 		seenIDs = append(seenIDs, sc.ExternalID)
 	}
@@ -151,10 +156,16 @@ type fakeLookupScraper struct {
 	barcodes map[string]string // external id -> barcode; missing = none
 	err      error
 	lookedUp []string
+	// afterLookup, if set, runs after each lookup with the running count,
+	// e.g. to cancel the run partway through.
+	afterLookup func(n int)
 }
 
 func (f *fakeLookupScraper) LookupEAN(ctx context.Context, set scraper.ScrapedSet) (string, error) {
 	f.lookedUp = append(f.lookedUp, set.ExternalID)
+	if f.afterLookup != nil {
+		defer f.afterLookup(len(f.lookedUp))
+	}
 	if f.err != nil {
 		return "", f.err
 	}
@@ -317,8 +328,8 @@ func TestRun_BarcodeLookup(t *testing.T) {
 	if db.eans["id-0"] != "listed" || db.eans["id-1"] != "4573102638236" || db.eans["id-2"] != "4573102579508" || db.eans["id-3"] != "" {
 		t.Errorf("applied EANs = %v", db.eans)
 	}
-	if len(db.markCalls) != 1 || len(db.markCalls[0]) != 4 {
-		t.Errorf("MarkEANChecked calls = %v, want one with the 4 looked-up ids", db.markCalls)
+	if len(db.recordCalls) != 1 || len(db.recordCalls[0]) != 4 {
+		t.Errorf("RecordEANLookups calls = %v, want one with the 4 looked-up ids", db.recordCalls)
 	}
 
 	// Second run: found barcodes are reused from the store (not wiped by
@@ -355,10 +366,68 @@ func TestRun_BarcodeLookupFailuresAreNotFatal(t *testing.T) {
 	if len(sc.lookedUp) != maxEANLookupFailures {
 		t.Errorf("attempted %d lookups, want %d before giving up", len(sc.lookedUp), maxEANLookupFailures)
 	}
-	if len(db.markCalls) != 0 {
-		t.Errorf("MarkEANChecked called %v, want not at all", db.markCalls)
+	if len(db.recordCalls) != 0 {
+		t.Errorf("RecordEANLookups called %v, want not at all", db.recordCalls)
 	}
 	if db.runs[1].status != "success" {
 		t.Errorf("run status = %s, want success", db.runs[1].status)
+	}
+}
+
+// A long backfill saves as it goes, not all at the end.
+func TestRun_BarcodeLookupsAreSavedInBatches(t *testing.T) {
+	db := newFakeStore()
+	sc := &fakeLookupScraper{fakeScraper: fakeScraper{sets: mkSets(60)}}
+	if err := Run(context.Background(), db, store.Shop{ID: 1, Slug: "fake"}, sc, discardLogger(), Options{}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var sizes []int
+	for _, c := range db.recordCalls {
+		sizes = append(sizes, len(c))
+	}
+	if fmt.Sprint(sizes) != fmt.Sprint([]int{eanFlushEvery, eanFlushEvery, 60 - 2*eanFlushEvery}) {
+		t.Errorf("saved in batches of %v, want [%d %d %d]", sizes, eanFlushEvery, eanFlushEvery, 60-2*eanFlushEvery)
+	}
+}
+
+// A run cut short mid-backfill (timeout, signal) keeps the run and the
+// lookups it finished, and the next run resumes with only the rest.
+func TestRun_InterruptedBackfillKeepsProgressAndResumes(t *testing.T) {
+	db := newFakeStore()
+	shop := store.Shop{ID: 1, Slug: "fake"}
+	barcodes := map[string]string{}
+	for i := 0; i < 40; i++ {
+		barcodes[fmt.Sprintf("id-%d", i)] = fmt.Sprintf("45731026%05d", i)
+	}
+	sc := &fakeLookupScraper{fakeScraper: fakeScraper{sets: mkSets(40)}, barcodes: barcodes}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	sc.afterLookup = func(n int) {
+		if n == 30 {
+			cancel() // e.g. the run timeout fires
+		}
+	}
+	if err := Run(ctx, db, shop, sc, discardLogger(), Options{}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if db.runs[1].status != "success" {
+		t.Fatalf("run status = %s, want success (the run was saved before the backfill)", db.runs[1].status)
+	}
+	if len(sc.lookedUp) != 30 {
+		t.Fatalf("looked up %d sets before cancel, want 30", len(sc.lookedUp))
+	}
+	// All 30 are saved, including the 5 past the last full batch.
+	for i := 0; i < 30; i++ {
+		if got := db.eans[fmt.Sprintf("id-%d", i)]; got == "" {
+			t.Fatalf("id-%d lost: eans = %v", i, db.eans)
+		}
+	}
+
+	sc.lookedUp, sc.afterLookup = nil, nil
+	if err := Run(context.Background(), db, shop, sc, discardLogger(), Options{}); err != nil {
+		t.Fatalf("Run 2: %v", err)
+	}
+	if len(sc.lookedUp) != 10 || sc.lookedUp[0] != "id-30" {
+		t.Errorf("resume looked up %v, want only id-30..id-39", sc.lookedUp)
 	}
 }

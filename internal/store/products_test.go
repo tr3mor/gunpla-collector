@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"gunpla-collector/internal/matcher"
 	"gunpla-collector/internal/scraper"
 )
 
@@ -41,90 +40,75 @@ func seedTwoShops(t *testing.T) *Store {
 	return s
 }
 
-func runMatching(t *testing.T, s *Store) MatchStats {
-	t.Helper()
-	ctx := context.Background()
-	listings, err := s.MatchListings(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	groups, _ := matcher.Match(listings)
-	stats, err := s.ApplyMatches(ctx, listings, groups, "2026-01-02T00:00:00Z")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return stats
-}
-
-func TestApplyMatches_GroupsAcrossShopsAndKeepsIDsStable(t *testing.T) {
-	s := seedTwoShops(t)
-	stats := runMatching(t, s)
-	if stats.Products != 2 || stats.MultiShop != 1 || stats.Created != 2 {
-		t.Fatalf("stats = %+v, want 2 products, 1 multi-shop, 2 created", stats)
-	}
-
-	rows, err := s.SearchSets(context.Background(), "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	pid := map[string]int64{}
-	for _, r := range rows {
-		if r.ProductID == 0 {
-			t.Errorf("%q has no product", r.Name)
-		}
-		pid[r.ShopSlug+"/"+r.Name] = r.ProductID
-	}
-	if pid["shop-a/MG RX-78-2 Gundam Ver. Ka 1/100"] != pid["shop-b/MG – RX-78-2 Gundam Ver.Ka"] {
-		t.Errorf("same kit got different products: %v", pid)
-	}
-
-	// A second run changes nothing: no new products, nobody reassigned.
-	again := runMatching(t, s)
-	if again.Created != 0 || again.Removed != 0 || again.Reassigned != 0 {
-		t.Errorf("re-run not idempotent: %+v", again)
-	}
-}
-
-func TestLinkAndUnlinkSurviveRematching(t *testing.T) {
+func TestApplyProducts_CreatesReusesAndPrunes(t *testing.T) {
 	s := seedTwoShops(t)
 	ctx := context.Background()
-	runMatching(t, s)
-
-	listings, _ := s.MatchListings(ctx)
-	idOf := func(name string) int64 {
-		for _, l := range listings {
-			if l.Name == name {
-				return l.ID
-			}
+	listings, err := s.Listings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listings) != 3 {
+		t.Fatalf("got %d listings, want 3", len(listings))
+	}
+	for _, l := range listings {
+		if l.ProductID != 0 || l.Manual {
+			t.Errorf("%q: ProductID=%d Manual=%v before any products", l.Name, l.ProductID, l.Manual)
 		}
-		t.Fatalf("no listing %q", name)
-		return 0
 	}
-	ka, kaB, zaku := idOf("MG RX-78-2 Gundam Ver. Ka 1/100"), idOf("MG – RX-78-2 Gundam Ver.Ka"), idOf("HG Zaku II")
+	id := func(i int) int64 { return listings[i].ID }
 
-	// Wrongly merged by the matcher in this scenario: split them by hand.
-	if err := s.UnlinkSet(ctx, kaB, "2026-01-03T00:00:00Z"); err != nil {
+	// Two products: the first two sets together, the third alone.
+	created, removed, err := s.ApplyProducts(ctx, []ProductPlan{
+		{Name: "Kit", Grade: "MG", Members: []ProductMember{{SetID: id(0), Method: "name"}, {SetID: id(1), Method: "name"}}},
+		{Name: "Other", Members: []ProductMember{{SetID: id(2)}}},
+	}, "2026-01-02T00:00:00Z")
+	if err != nil {
 		t.Fatal(err)
 	}
-	// And force an unrelated kit in with the first one.
-	if err := s.LinkSets(ctx, ka, zaku); err != nil {
-		t.Fatal(err)
+	if created != 2 || removed != 0 {
+		t.Fatalf("created=%d removed=%d, want 2/0", created, removed)
+	}
+	listings, _ = s.Listings(ctx)
+	first, third := listings[0].ProductID, listings[2].ProductID
+	if first == 0 || first != listings[1].ProductID || first == third {
+		t.Fatalf("product ids = %d %d %d", first, listings[1].ProductID, third)
 	}
 
-	runMatching(t, s)
+	// Keep the first product (renamed) for all three sets: the third
+	// set's old product is now empty and is deleted.
+	created, removed, err = s.ApplyProducts(ctx, []ProductPlan{
+		{ProductID: first, Name: "Everything", Grade: "MG", Members: []ProductMember{{SetID: id(0)}, {SetID: id(1)}, {SetID: id(2)}}},
+	}, "2026-01-03T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created != 0 || removed != 1 {
+		t.Fatalf("created=%d removed=%d, want 0/1", created, removed)
+	}
 	rows, _ := s.SearchSets(ctx, "")
-	byName := map[string]SetSearchRow{}
 	for _, r := range rows {
-		byName[r.Name] = r
+		if r.ProductID != first || r.ProductName != "Everything" {
+			t.Errorf("%q: product %d %q, want %d Everything", r.Name, r.ProductID, r.ProductName, first)
+		}
 	}
-	if byName["MG – RX-78-2 Gundam Ver.Ka"].ProductID == byName["MG RX-78-2 Gundam Ver. Ka 1/100"].ProductID {
-		t.Error("unlinked set was re-merged by automatic matching")
+}
+
+func TestLinkSets_MarksBothManual(t *testing.T) {
+	s := seedTwoShops(t)
+	ctx := context.Background()
+	listings, _ := s.Listings(ctx)
+	if _, _, err := s.ApplyProducts(ctx, []ProductPlan{
+		{Name: "A", Members: []ProductMember{{SetID: listings[0].ID}}},
+		{Name: "B", Members: []ProductMember{{SetID: listings[1].ID}, {SetID: listings[2].ID}}},
+	}, "2026-01-02T00:00:00Z"); err != nil {
+		t.Fatal(err)
 	}
-	if byName["HG Zaku II"].ProductID != byName["MG RX-78-2 Gundam Ver. Ka 1/100"].ProductID {
-		t.Error("manual link was undone by automatic matching")
+	if err := s.LinkSets(ctx, listings[0].ID, listings[1].ID); err != nil {
+		t.Fatal(err)
 	}
-	if byName["HG Zaku II"].MatchMethod != "manual" {
-		t.Errorf("match method = %q, want manual", byName["HG Zaku II"].MatchMethod)
+	after, _ := s.Listings(ctx)
+	if after[0].ProductID != after[1].ProductID || !after[0].Manual || !after[1].Manual || after[2].Manual {
+		t.Errorf("after link: %+v", after)
 	}
 }
 
