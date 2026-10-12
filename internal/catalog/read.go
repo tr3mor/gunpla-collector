@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"gunpla-collector/internal/fx"
 	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
 )
@@ -141,8 +142,8 @@ func (c *Catalog) Products(ctx context.Context, f Filter) ([]Product, error) {
 
 // markCheapest flags the cheapest in-stock (or pre-order) listing, but only
 // when at least two shops list the kit — a lone listing is trivially
-// "cheapest". Out-of-stock listings never win; listings in a currency with
-// no configured rate aren't comparable and are skipped.
+// "cheapest". Stock, currencies and missing rates are fx.Rates.Cheapest's
+// concern.
 func (c *Catalog) markCheapest(ls []Listing) {
 	shops := map[string]bool{}
 	for _, l := range ls {
@@ -151,30 +152,18 @@ func (c *Catalog) markCheapest(ls []Listing) {
 	if len(shops) < 2 {
 		return
 	}
-	best, found := 0, false
-	eur := make([]int, len(ls)) // -1: not a candidate
+	offers := make([]fx.Offer, len(ls))
 	for i, l := range ls {
-		eur[i] = -1
-		if l.Availability == scraper.AvailabilityOutOfStock {
-			continue
-		}
-		cents, ok := c.inEUR(l.CurrentCents, l.Currency)
-		if !ok {
-			continue
-		}
-		eur[i] = cents
-		if !found || cents < best {
-			best, found = cents, true
-		}
+		offers[i] = fx.Offer{Cents: l.CurrentCents, Currency: l.Currency, Excluded: l.Availability == scraper.AvailabilityOutOfStock}
 	}
-	for i := range ls {
-		ls[i].Cheapest = found && eur[i] == best
+	for i, cheapest := range c.rates.Cheapest(offers) {
+		ls[i].Cheapest = cheapest
 	}
 }
 
-func (c *Catalog) inEUR(cents int, currency string) (int, bool) {
-	if currency == "EUR" {
-		return cents, true
-	}
-	return c.rates.ToEUR(cents, currency)
+// Display presents a listing price in EUR when a rate exists, keeping the
+// original (see fx.Rates.Display). Consumers show prices through the
+// catalog so the rates are wired once.
+func (c *Catalog) Display(cents int, currency string) fx.Price {
+	return c.rates.Display(cents, currency)
 }

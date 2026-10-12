@@ -307,7 +307,7 @@ func addrFlag(flagVal, cfgDefault string) string {
 func serve(ctx context.Context, db *store.Store, logger *slog.Logger, addr, writeToken string, rates fx.Rates) error {
 	srv := &http.Server{
 		Addr:    addr,
-		Handler: web.NewServer(catalog.New(db, catalog.WithEURRates(rates)), db, logger, web.WithEURRates(rates), web.WithWriteToken(writeToken)).Handler(),
+		Handler: web.NewServer(catalog.New(db, catalog.WithEURRates(rates)), db, logger, web.WithWriteToken(writeToken)).Handler(),
 	}
 
 	errCh := make(chan error, 1)

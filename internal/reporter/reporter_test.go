@@ -297,3 +297,16 @@ func TestRun_ConvertsUSDToEUR(t *testing.T) {
 		t.Errorf("message still shows USD:\n%s", msg)
 	}
 }
+
+func TestConvertChanges_NoRateKeepsBothPricesInShopCurrency(t *testing.T) {
+	got := convertChanges(fx.Rates{"USD": 0.9}, []store.PriceChange{
+		{Name: "Yen", OldCents: 10000, NewCents: 8000, Currency: "JPY"},
+		{Name: "Dollar", OldCents: 10000, NewCents: 8000, Currency: "USD"},
+	})
+	if y := got[0]; y.OldCents != 10000 || y.NewCents != 8000 || y.Currency != "JPY" {
+		t.Errorf("no-rate change = %+v, want untouched", y)
+	}
+	if d := got[1]; d.OldCents != 9000 || d.NewCents != 7200 || d.Currency != "EUR" {
+		t.Errorf("converted change = %+v", d)
+	}
+}

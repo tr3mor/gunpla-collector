@@ -147,23 +147,19 @@ func Run(ctx context.Context, db Store, shop store.Shop, sender telegram.Sender,
 	return outcome, nil
 }
 
+// Reports show the converted price only; the original currency isn't kept.
 func convertItems(r fx.Rates, items []store.ReportItem) []store.ReportItem {
 	for i := range items {
-		if cents, ok := r.ToEUR(items[i].PriceCents, items[i].Currency); ok {
-			items[i].PriceCents, items[i].Currency = cents, "EUR"
-		}
+		p := r.Display(items[i].PriceCents, items[i].Currency)
+		items[i].PriceCents, items[i].Currency = p.Cents, p.Currency
 	}
 	return items
 }
 
 func convertChanges(r fx.Rates, changes []store.PriceChange) []store.PriceChange {
 	for i := range changes {
-		old, ok := r.ToEUR(changes[i].OldCents, changes[i].Currency)
-		if !ok {
-			continue
-		}
-		changes[i].NewCents, _ = r.ToEUR(changes[i].NewCents, changes[i].Currency)
-		changes[i].OldCents, changes[i].Currency = old, "EUR"
+		old, cur := r.Display(changes[i].OldCents, changes[i].Currency), r.Display(changes[i].NewCents, changes[i].Currency)
+		changes[i].OldCents, changes[i].NewCents, changes[i].Currency = old.Cents, cur.Cents, old.Currency
 	}
 	return changes
 }

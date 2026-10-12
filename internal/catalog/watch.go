@@ -259,7 +259,7 @@ func (snap *snapshot) preview(spec WatchSpec) WatchPreview {
 			}
 		}
 		if (suit && selected) || pinned {
-			cents, hasEUR := c.inEUR(row.CurrentCents, row.Currency)
+			cents, hasEUR := c.rates.Compare(row.CurrentCents, row.Currency)
 			matches = append(matches, WatchMatch{
 				SetSearchRow: row, Variant: vk, Pinned: pinned,
 				Excluded: slices.Contains(spec.Exclude, row.SetID),
@@ -327,7 +327,7 @@ func (c *Catalog) buyableEUR(row store.SetSearchRow) (int, bool) {
 	if row.Availability == scraper.AvailabilityOutOfStock {
 		return 0, false
 	}
-	return c.inEUR(row.CurrentCents, row.Currency)
+	return c.rates.Compare(row.CurrentCents, row.Currency)
 }
 
 // variantLabel renders a listing's version words for people: "Ver.Ka",

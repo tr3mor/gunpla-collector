@@ -75,7 +75,13 @@ Everything about products lives in `internal/catalog`: `Regroup` (run by
 `match` and at the end of `collect`), `Link`/`Unlink`, and the read model
 the search UI uses (`Search`, `Products`, with the cheapest listing of a
 multi-shop kit flagged). `internal/matcher` is the pure grouping algorithm
-it uses internally; `internal/store` only persists.
+it uses internally; `internal/store` only persists (`ProductTx`: load
+listings, create/rename products, assign sets, prune). Product assignment —
+the id-stability policy, what "manual" means, link and unlink — lives in
+`internal/catalog/assign.go`, and each of Regroup/Link/Unlink runs in one
+transaction. Listings their shop no longer lists (inactive) are not matched:
+they keep their product but can't block a live listing from the same shop or
+name the product.
 
 A listing joins a product when it shares a barcode (EAN) with it, or when
 its normalised name does: same grade, same model number (e.g. RX-78-2),

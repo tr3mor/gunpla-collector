@@ -25,6 +25,11 @@ type fakeCatalog struct {
 	saved    []catalog.Watch
 	review   []catalog.ReviewRow
 	linked   [][2]int64
+	rates    fx.Rates
+}
+
+func (f *fakeCatalog) Display(cents int, currency string) fx.Price {
+	return f.rates.Display(cents, currency)
 }
 
 func (f *fakeCatalog) Search(ctx context.Context, flt catalog.Filter) ([]store.SetSearchRow, error) {
@@ -189,7 +194,7 @@ func TestHandleIndex_ServesHTML(t *testing.T) {
 
 func TestHandleProducts_EncodesProductsAndConvertsToEUR(t *testing.T) {
 	s, fc := newTestServer()
-	s.eurRates = fx.Rates{"USD": 0.9}
+	fc.rates = fx.Rates{"USD": 0.9}
 	fc.products = []catalog.Product{
 		{ID: 7, Name: "Kit", Grade: "MG", Listings: []catalog.Listing{
 			{SetSearchRow: store.SetSearchRow{SetID: 1, ProductID: 7, ShopSlug: "us", ShopName: "US", Name: "Kit", URL: "u1", CurrentCents: 10000, LowestCents: 9000, Currency: "USD", MatchMethod: "ean"}, Cheapest: true},
@@ -232,10 +237,18 @@ func TestHandleProducts_EmptyIsAnEmptyArray(t *testing.T) {
 }
 
 func TestHandleSearch_ConvertsToEUR(t *testing.T) {
-	s, _ := newTestServer()
-	s.eurRates = fx.Rates{"USD": 0.5}
+	s, fc := newTestServer()
+	fc.rates = fx.Rates{"USD": 0.5}
 	got := decodeSearch(t, get(t, s, "/api/search").Body.Bytes())
 	if len(got) != 2 || got[1].Currency != "EUR" || got[1].CurrentCents != 1500 {
 		t.Errorf("got %+v, want the $30.00 Nu Gundam as EUR 15.00", got)
+	}
+}
+
+func TestHandleSearch_NoRateKeepsShopCurrency(t *testing.T) {
+	s, _ := newTestServer()
+	got := decodeSearch(t, get(t, s, "/api/search").Body.Bytes())
+	if us := got[1]; us.Currency != "USD" || us.CurrentCents != 3000 || us.LowestCents != 3000 || us.OriginalCurrency != "" {
+		t.Errorf("got %+v, want the USD price untouched", us)
 	}
 }

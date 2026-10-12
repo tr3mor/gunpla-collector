@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"gunpla-collector/internal/scraper"
@@ -138,5 +139,110 @@ func TestLinkAndUnlinkSurviveRegroup(t *testing.T) {
 	}
 	if byName["HG Zaku II"].MatchMethod != "manual" {
 		t.Errorf("match method = %q, want manual", byName["HG Zaku II"].MatchMethod)
+	}
+}
+
+// collect runs one scrape of a shop, so sets missing from it go inactive.
+func collect(t *testing.T, s *store.Store, slug, at string, sets ...scraper.ScrapedSet) {
+	t.Helper()
+	ctx := context.Background()
+	shop, err := s.GetOrCreateShop(ctx, slug, slug, "https://"+slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID, err := s.StartRun(ctx, shop.ID, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ApplyRun(ctx, shop.ID, runID, sets, at); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRegroup_InactiveListingDoesNotBlockItsLiveReplacement(t *testing.T) {
+	s := seedTwoShops(t)
+	c := New(s)
+	ctx := context.Background()
+	if _, err := c.Regroup(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// Shop A relists the Ver.Ka under a new id and a longer name; the old
+	// listing goes inactive but keeps its place in the product.
+	collect(t, s, "shop-a", "2026-01-02T00:00:00Z",
+		scraper.ScrapedSet{ExternalID: "3", URL: "u3", Name: "MG RX-78-2 Gundam Ver.Ka Bandai Model Kit", Grade: "MG", PriceCents: 9000, Currency: "EUR"},
+		scraper.ScrapedSet{ExternalID: "2", URL: "u2", Name: "HG Zaku II", Grade: "HG", PriceCents: 2000, Currency: "EUR"},
+	)
+	if _, err := c.Regroup(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := s.SearchSets(ctx, "") // active listings only
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid := map[string]int64{}
+	name := map[string]string{}
+	for _, r := range rows {
+		pid[r.ShopSlug+"/"+r.Grade] = r.ProductID
+		name[r.ShopSlug+"/"+r.Grade] = r.ProductName
+	}
+	if pid["shop-a/MG"] == 0 || pid["shop-a/MG"] != pid["shop-b/MG"] {
+		t.Errorf("live shop-a listing not grouped with shop-b: %v", pid)
+	}
+	// The removed listing's shorter name must not name the product.
+	if want := "MG – RX-78-2 Gundam Ver.Ka"; name["shop-a/MG"] != want {
+		t.Errorf("product name = %q, want %q", name["shop-a/MG"], want)
+	}
+}
+
+func TestRegroup_InactiveListingKeepsItsProductButNotItsName(t *testing.T) {
+	s := seedTwoShops(t)
+	c := New(s)
+	ctx := context.Background()
+	if _, err := c.Regroup(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// Shop A drops everything; shop B (the longer name) is all that is left.
+	collect(t, s, "shop-a", "2026-01-02T00:00:00Z")
+	if _, err := c.Regroup(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, _ := s.SearchSets(ctx, "")
+	if len(rows) != 1 || rows[0].ProductName != "MG – RX-78-2 Gundam Ver.Ka" {
+		t.Fatalf("active rows = %+v, want shop-b alone, named after itself", rows)
+	}
+	all, _ := s.Listings(ctx)
+	for _, l := range all {
+		if l.ProductID == 0 {
+			t.Errorf("%q lost its product", l.Name)
+		}
+		if l.Shop == "shop-a" && l.Grade == "MG" && l.ProductID != rows[0].ProductID {
+			t.Errorf("inactive Ver.Ka left product %d for %d", rows[0].ProductID, l.ProductID)
+		}
+	}
+}
+
+func TestLink_NeedsAProductAndKnownSets(t *testing.T) {
+	s := seedTwoShops(t)
+	c := New(s)
+	ctx := context.Background()
+	all, _ := s.Listings(ctx)
+	if err := c.Link(ctx, all[0].ID, all[1].ID); err == nil {
+		t.Error("link before the first match: want an error")
+	}
+	if _, err := c.Regroup(ctx); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := s.Listings(ctx)
+	if err := c.Link(ctx, all[0].ID, 9999); err == nil {
+		t.Error("link to an unknown set: want an error")
+	}
+	if err := c.Unlink(ctx, 9999); err == nil {
+		t.Error("unlink of an unknown set: want an error")
+	}
+	if after, _ := s.Listings(ctx); !reflect.DeepEqual(before, after) {
+		t.Errorf("failed link/unlink changed state:\nbefore %+v\nafter  %+v", before, after)
 	}
 }
