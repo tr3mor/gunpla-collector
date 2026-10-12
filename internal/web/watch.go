@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"gunpla-collector/internal/catalog"
 	"gunpla-collector/internal/store"
+	"gunpla-collector/internal/watchlist"
 )
 
 // maxBody bounds a JSON request body.
@@ -23,7 +23,7 @@ func (s *Server) decode(w http.ResponseWriter, r *http.Request, v any) bool {
 
 // failWatch answers a failed watch operation.
 func (s *Server) failWatch(w http.ResponseWriter, err error) {
-	var bad *catalog.ErrInvalidWatch
+	var bad *watchlist.InvalidError
 	switch {
 	case errors.As(err, &bad):
 		s.writeError(w, http.StatusBadRequest, err)
@@ -54,17 +54,17 @@ type watchMatchJSON struct {
 
 type watchPreviewJSON struct {
 	Label           string             `json:"label,omitempty"`
-	Spec            catalog.WatchSpec  `json:"spec"`
+	Spec            watchlist.Spec     `json:"spec"`
 	Variants        []watchVariantJSON `json:"variants"`
 	Matches         []watchMatchJSON   `json:"matches"`
 	MissingVariants []string           `json:"missing_variants"`
 }
 
-func (s *Server) matchJSON(m catalog.WatchMatch) watchMatchJSON {
-	return watchMatchJSON{searchResultJSON: s.toResultJSON(m.SetSearchRow), Variant: m.Variant, Excluded: m.Excluded, Pinned: m.Pinned, Best: m.Best}
+func (s *Server) matchJSON(m watchlist.Match) watchMatchJSON {
+	return watchMatchJSON{searchResultJSON: s.toResultJSON(rowOf(m.Listing)), Variant: m.Variant, Excluded: m.Excluded, Pinned: m.Pinned, Best: m.Best}
 }
 
-func (s *Server) previewJSON(label string, p catalog.WatchPreview) watchPreviewJSON {
+func (s *Server) previewJSON(label string, p watchlist.Preview) watchPreviewJSON {
 	out := watchPreviewJSON{
 		Label: label, Spec: p.Spec, MissingVariants: nonNil(p.MissingVariants),
 		Variants: make([]watchVariantJSON, 0, len(p.Variants)),
@@ -92,8 +92,8 @@ func nonNil(v []string) []string {
 // watchPreviewRequest asks what a watch resolves to: either a listing to
 // derive the default "this kit" spec from, or an (edited) spec.
 type watchPreviewRequest struct {
-	SetID int64              `json:"set_id"`
-	Spec  *catalog.WatchSpec `json:"spec"`
+	SetID int64           `json:"set_id"`
+	Spec  *watchlist.Spec `json:"spec"`
 }
 
 // handleWatchPreview resolves a watch spec against the catalog. It only
@@ -103,14 +103,14 @@ func (s *Server) handleWatchPreview(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &req) {
 		return
 	}
-	var spec catalog.WatchSpec
+	var spec watchlist.Spec
 	label := ""
 	switch {
 	case req.Spec != nil:
 		spec = *req.Spec
 	case req.SetID > 0:
 		var err error
-		if spec, label, err = s.catalog.SpecFromSet(r.Context(), req.SetID); err != nil {
+		if spec, label, err = s.watchlist.SpecFromSet(r.Context(), req.SetID); err != nil {
 			s.writeError(w, http.StatusNotFound, err)
 			return
 		}
@@ -118,7 +118,7 @@ func (s *Server) handleWatchPreview(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, errors.New("set_id or spec is required"))
 		return
 	}
-	p, err := s.catalog.PreviewWatch(r.Context(), spec)
+	p, err := s.watchlist.Preview(r.Context(), spec)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -128,20 +128,20 @@ func (s *Server) handleWatchPreview(w http.ResponseWriter, r *http.Request) {
 
 // watchJSON is the wire shape of a saved watch.
 type watchJSON struct {
-	ID            int64             `json:"id"`
-	Label         string            `json:"label"`
-	Spec          catalog.WatchSpec `json:"spec"`
-	MaxPriceCents int               `json:"max_price_cents"`
-	OnRestock     bool              `json:"on_restock"`
-	OnNew         bool              `json:"on_new"`
-	Enabled       bool              `json:"enabled"`
+	ID            int64          `json:"id"`
+	Label         string         `json:"label"`
+	Spec          watchlist.Spec `json:"spec"`
+	MaxPriceCents int            `json:"max_price_cents"`
+	OnRestock     bool           `json:"on_restock"`
+	OnNew         bool           `json:"on_new"`
+	Enabled       bool           `json:"enabled"`
 }
 
-func (j watchJSON) watch() catalog.Watch {
-	return catalog.Watch{ID: j.ID, Label: j.Label, Spec: j.Spec, MaxPriceCents: j.MaxPriceCents, OnRestock: j.OnRestock, OnNew: j.OnNew, Enabled: j.Enabled}
+func (j watchJSON) watch() watchlist.Watch {
+	return watchlist.Watch{ID: j.ID, Label: j.Label, Spec: j.Spec, MaxPriceCents: j.MaxPriceCents, OnRestock: j.OnRestock, OnNew: j.OnNew, Enabled: j.Enabled}
 }
 
-func toWatchJSON(w catalog.Watch) watchJSON {
+func toWatchJSON(w watchlist.Watch) watchJSON {
 	return watchJSON{ID: w.ID, Label: w.Label, Spec: w.Spec, MaxPriceCents: w.MaxPriceCents, OnRestock: w.OnRestock, OnNew: w.OnNew, Enabled: w.Enabled}
 }
 
@@ -163,7 +163,7 @@ type watchesJSON struct {
 }
 
 func (s *Server) handleWatches(w http.ResponseWriter, r *http.Request) {
-	statuses, err := s.catalog.WatchStatuses(r.Context())
+	statuses, err := s.watchlist.Statuses(r.Context())
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -211,7 +211,7 @@ func (s *Server) handleWatchSave(w http.ResponseWriter, r *http.Request) {
 	} else {
 		wt.ID = 0
 	}
-	saved, err := s.catalog.SaveWatch(r.Context(), wt)
+	saved, err := s.watchlist.Save(r.Context(), wt)
 	if err != nil {
 		s.failWatch(w, err)
 		return
@@ -225,9 +225,18 @@ func (s *Server) handleWatchDelete(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, errors.New("bad watch id"))
 		return
 	}
-	if err := s.catalog.DeleteWatch(r.Context(), id); err != nil {
+	if err := s.watchlist.Delete(r.Context(), id); err != nil {
 		s.failWatch(w, err)
 		return
 	}
 	s.writeJSON(w, map[string]bool{"ok": true})
+}
+
+// rowOf adapts a watchlist listing to the row shape the search results use.
+func rowOf(l watchlist.Listing) store.SetSearchRow {
+	return store.SetSearchRow{
+		SetID: l.SetID, ShopSlug: l.ShopSlug, ShopName: l.ShopName, Name: l.Name, Grade: l.Grade, URL: l.URL,
+		CurrentCents: l.CurrentCents, Currency: l.Currency, Availability: l.Availability, LowestCents: l.LowestCents,
+		EURCents: l.EURCents, LowestEURCents: l.LowestEURCents, HasEUR: l.HasEUR, ScrapedAt: l.ScrapedAt,
+	}
 }

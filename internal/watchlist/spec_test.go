@@ -1,4 +1,4 @@
-package catalog
+package watchlist
 
 import (
 	"context"
@@ -6,6 +6,24 @@ import (
 
 	"gunpla-collector/internal/store"
 )
+
+// rowsStore serves fixed search rows; like the real store, it gives EUR rows
+// a EUR value.
+type rowsStore struct {
+	Store
+	rows []store.SetSearchRow
+}
+
+func (f *rowsStore) SearchSets(ctx context.Context, shopSlug string) ([]store.SetSearchRow, error) {
+	var out []store.SetSearchRow
+	for _, r := range f.rows {
+		if r.Currency == "EUR" && !r.HasEUR {
+			r.EURCents, r.LowestEURCents, r.HasEUR = r.CurrentCents, r.LowestCents, true
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
 
 func watchRows() []store.SetSearchRow {
 	row := func(id int64, shop, name string, cents int) store.SetSearchRow {
@@ -29,7 +47,7 @@ func TestPreviewWatch_SameKitFromEitherListing(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		p, err := c.PreviewWatch(ctx, spec)
+		p, err := c.Preview(ctx, spec)
 		if err != nil {
 			t.Fatal(err)
 		}

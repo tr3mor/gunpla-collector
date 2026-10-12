@@ -8,7 +8,7 @@ import (
 	"fmt"
 )
 
-// Watch is a saved alert on a kit. Spec is opaque JSON owned by the catalog
+// Watch is a saved alert on a kit. Spec is opaque JSON owned by the watchlist
 // package.
 type Watch struct {
 	ID    int64

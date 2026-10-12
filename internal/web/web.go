@@ -14,6 +14,7 @@ import (
 
 	"gunpla-collector/internal/catalog"
 	"gunpla-collector/internal/store"
+	"gunpla-collector/internal/watchlist"
 )
 
 //go:embed index.html
@@ -25,15 +26,20 @@ var indexHTML []byte
 type Catalog interface {
 	Search(ctx context.Context, f catalog.Filter) ([]store.SetSearchRow, error)
 	Products(ctx context.Context, f catalog.Filter) ([]catalog.Product, error)
-	SpecFromSet(ctx context.Context, setID int64) (catalog.WatchSpec, string, error)
-	PreviewWatch(ctx context.Context, spec catalog.WatchSpec) (catalog.WatchPreview, error)
-	WatchStatuses(ctx context.Context) ([]catalog.WatchStatus, error)
-	SaveWatch(ctx context.Context, w catalog.Watch) (catalog.Watch, error)
-	DeleteWatch(ctx context.Context, id int64) error
 	NearMisses(ctx context.Context, includeDismissed bool) ([]catalog.ReviewRow, error)
 	Link(ctx context.Context, a, b int64) error
 	DismissMatch(ctx context.Context, a, b int64) error
 	RestoreMatch(ctx context.Context, a, b int64) error
+}
+
+// Watchlist is the saved watches the server serves — matches
+// *watchlist.Watchlist.
+type Watchlist interface {
+	SpecFromSet(ctx context.Context, setID int64) (watchlist.Spec, string, error)
+	Preview(ctx context.Context, spec watchlist.Spec) (watchlist.Preview, error)
+	Statuses(ctx context.Context) ([]watchlist.Status, error)
+	Save(ctx context.Context, w watchlist.Watch) (watchlist.Watch, error)
+	Delete(ctx context.Context, id int64) error
 }
 
 // Shops lists the shops the UI can filter by — matches *store.Store.
@@ -43,9 +49,10 @@ type Shops interface {
 
 // Server serves the search UI and its backing JSON API.
 type Server struct {
-	catalog Catalog
-	shops   Shops
-	logger  *slog.Logger
+	catalog   Catalog
+	watchlist Watchlist
+	shops     Shops
+	logger    *slog.Logger
 	// writeToken, if set, is required on requests that change data.
 	writeToken string
 }
@@ -53,8 +60,8 @@ type Server struct {
 // Option configures a Server.
 type Option func(*Server)
 
-func NewServer(c Catalog, shops Shops, logger *slog.Logger, opts ...Option) *Server {
-	s := &Server{catalog: c, shops: shops, logger: logger}
+func NewServer(c Catalog, wl Watchlist, shops Shops, logger *slog.Logger, opts ...Option) *Server {
+	s := &Server{catalog: c, watchlist: wl, shops: shops, logger: logger}
 	for _, o := range opts {
 		o(s)
 	}

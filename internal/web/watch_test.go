@@ -13,6 +13,7 @@ import (
 	"gunpla-collector/internal/catalog"
 	"gunpla-collector/internal/matcher"
 	"gunpla-collector/internal/store"
+	"gunpla-collector/internal/watchlist"
 )
 
 func send(s *Server, method, target, body string, hdr map[string]string) *httptest.ResponseRecorder {
@@ -61,7 +62,7 @@ func TestWatchSave_CreateUpdateDelete(t *testing.T) {
 
 func TestWatchSave_MapsErrors(t *testing.T) {
 	s, fc := newTestServer()
-	fc.err = &catalog.ErrInvalidWatch{Reason: "a watch needs a name"}
+	fc.err = &watchlist.InvalidError{Reason: "a watch needs a name"}
 	if rec := send(s, "POST", "/api/watches", watchBody, nil); rec.Code != 400 || !strings.Contains(rec.Body.String(), "needs a name") {
 		t.Errorf("invalid: %d %s", rec.Code, rec.Body)
 	}
@@ -104,7 +105,7 @@ func TestWrites_AreGuarded(t *testing.T) {
 
 func TestWrites_RequireTheTokenWhenSet(t *testing.T) {
 	fc := &fakeCatalog{}
-	s := NewServer(fc, fakeShops{}, slog.New(slog.NewTextHandler(io.Discard, nil)), WithWriteToken("s3cret"))
+	s := NewServer(fc, fc, fakeShops{}, slog.New(slog.NewTextHandler(io.Discard, nil)), WithWriteToken("s3cret"))
 	if rec := send(s, "POST", "/api/watches", watchBody, nil); rec.Code != 401 || rec.Header().Get("WWW-Authenticate") == "" {
 		t.Errorf("no token: %d", rec.Code)
 	}
@@ -128,13 +129,13 @@ func TestWrites_RequireTheTokenWhenSet(t *testing.T) {
 
 func TestHandleWatches_ListsStatusAndWatchedSets(t *testing.T) {
 	s, fc := newTestServer()
-	row := store.SetSearchRow{SetID: 5, ShopName: "A", Name: "MG RX-78-2", CurrentCents: 4000, Currency: "EUR", HasEUR: true, EURCents: 4000}
-	fc.statuses = []catalog.WatchStatus{
-		{Watch: catalog.Watch{ID: 1, Label: "on", Enabled: true}, Hit: true, Preview: catalog.WatchPreview{
-			Matches:  []catalog.WatchMatch{{SetSearchRow: row, Best: true}, {SetSearchRow: store.SetSearchRow{SetID: 6}, Excluded: true}},
-			Variants: []catalog.Variant{{Label: "Ver.Ka", Selected: true}, {Label: "Base release"}},
+	row := watchlist.Listing{SetID: 5, ShopName: "A", Name: "MG RX-78-2", CurrentCents: 4000, Currency: "EUR", HasEUR: true, EURCents: 4000}
+	fc.statuses = []watchlist.Status{
+		{Watch: watchlist.Watch{ID: 1, Label: "on", Enabled: true}, Hit: true, Preview: watchlist.Preview{
+			Matches:  []watchlist.Match{{Listing: row, Best: true}, {Listing: watchlist.Listing{SetID: 6}, Excluded: true}},
+			Variants: []watchlist.Variant{{Label: "Ver.Ka", Selected: true}, {Label: "Base release"}},
 		}},
-		{Watch: catalog.Watch{ID: 2, Label: "paused"}, Preview: catalog.WatchPreview{Matches: []catalog.WatchMatch{{SetSearchRow: store.SetSearchRow{SetID: 9}}}}},
+		{Watch: watchlist.Watch{ID: 2, Label: "paused"}, Preview: watchlist.Preview{Matches: []watchlist.Match{{Listing: watchlist.Listing{SetID: 9}}}}},
 	}
 	var out watchesJSON
 	if err := json.Unmarshal(send(s, "GET", "/api/watches", "", nil).Body.Bytes(), &out); err != nil {

@@ -102,13 +102,15 @@ shops" for the flat list).
 
 ## Watches
 
+Watches live in `internal/watchlist`, separate from `internal/catalog` (products). It reads active listings through the store and keeps its own listing type.
+
 A watch (created from the ☆ in the search UI) alerts on a kit's price or
 stock. It follows listings through their matcher facets, **not** product
 ids, so it keeps working where grouping is imperfect. A spec holds the
 grade, model number, descriptive words, the accepted versions (`verka`,
 `clear`, `~base`, ...), and per-listing pins (`include`/`exclude`).
 
-Which listings a spec follows (`catalog.WatchSpec`, `matcher.SameSuit`):
+Which listings a spec follows (`watchlist.Spec`, `matcher.SameSuit`):
 - grade must agree, but a listing with no grade (many pre-orders) fits any;
 - if both names print a model number they must be equal; shops often print
   it on only one side, so otherwise the descriptive words decide

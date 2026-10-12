@@ -1,4 +1,4 @@
-package catalog
+package watchlist
 
 import (
 	"context"
@@ -29,7 +29,7 @@ const (
 type Watch struct {
 	ID    int64
 	Label string
-	Spec  WatchSpec
+	Spec  Spec
 	// MaxPriceCents is the EUR price at or under which to alert; 0 = none.
 	MaxPriceCents int
 	OnRestock     bool
@@ -37,18 +37,18 @@ type Watch struct {
 	Enabled       bool
 }
 
-// ErrInvalidWatch reports a watch that can't be saved; callers serving user
+// InvalidError reports a watch that can't be saved; callers serving user
 // input treat it as a bad request.
-type ErrInvalidWatch struct{ Reason string }
+type InvalidError struct{ Reason string }
 
-func (e *ErrInvalidWatch) Error() string { return e.Reason }
+func (e *InvalidError) Error() string { return e.Reason }
 
 func invalid(format string, a ...any) error {
-	return &ErrInvalidWatch{Reason: fmt.Sprintf(format, a...)}
+	return &InvalidError{Reason: fmt.Sprintf(format, a...)}
 }
 
-// ErrWatchNotFound is returned for an unknown watch id.
-var ErrWatchNotFound = store.ErrWatchNotFound
+// ErrNotFound is returned for an unknown watch id.
+var ErrNotFound = store.ErrWatchNotFound
 
 func fromStore(sw store.Watch) (Watch, error) {
 	w := Watch{ID: sw.ID, Label: sw.Label, MaxPriceCents: sw.MaxPriceCents, OnRestock: sw.OnRestock, OnNew: sw.OnNew, Enabled: sw.Enabled}
@@ -87,7 +87,7 @@ func (w Watch) validate() error {
 }
 
 // Watches lists the saved watches, oldest first.
-func (c *Catalog) Watches(ctx context.Context) ([]Watch, error) {
+func (c *Watchlist) List(ctx context.Context) ([]Watch, error) {
 	rows, err := c.store.Watches(ctx)
 	if err != nil {
 		return nil, err
@@ -103,10 +103,10 @@ func (c *Catalog) Watches(ctx context.Context) ([]Watch, error) {
 	return out, nil
 }
 
-// SaveWatch creates the watch (ID 0) or updates it. An update that changes
+// Save creates the watch (ID 0) or updates it. An update that changes
 // what the watch follows or its price target restarts its alert state, so
 // the new settings get a fresh baseline.
-func (c *Catalog) SaveWatch(ctx context.Context, w Watch) (Watch, error) {
+func (c *Watchlist) Save(ctx context.Context, w Watch) (Watch, error) {
 	w.Label = strings.TrimSpace(w.Label)
 	w.Spec = w.Spec.normalized()
 	if err := w.validate(); err != nil {
@@ -141,22 +141,22 @@ func (c *Catalog) SaveWatch(ctx context.Context, w Watch) (Watch, error) {
 	return w, nil
 }
 
-// DeleteWatch removes a watch.
-func (c *Catalog) DeleteWatch(ctx context.Context, id int64) error {
+// Delete removes a watch.
+func (c *Watchlist) Delete(ctx context.Context, id int64) error {
 	return c.store.DeleteWatch(ctx, id)
 }
 
-// WatchStatus is a watch with what it currently resolves to.
-type WatchStatus struct {
+// Status is a watch with what it currently resolves to.
+type Status struct {
 	Watch   Watch
-	Preview WatchPreview
+	Preview Preview
 	// Hit is true when a buyable listing is at or under the price target.
 	Hit bool
 }
 
-// WatchStatuses evaluates every watch against one read of the catalog.
-func (c *Catalog) WatchStatuses(ctx context.Context) ([]WatchStatus, error) {
-	watches, err := c.Watches(ctx)
+// Statuses evaluates every watch against one read of the catalog.
+func (c *Watchlist) Statuses(ctx context.Context) ([]Status, error) {
+	watches, err := c.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -164,10 +164,10 @@ func (c *Catalog) WatchStatuses(ctx context.Context) ([]WatchStatus, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]WatchStatus, 0, len(watches))
+	out := make([]Status, 0, len(watches))
 	for _, w := range watches {
 		p := snap.preview(w.Spec)
-		st := WatchStatus{Watch: w, Preview: p}
+		st := Status{Watch: w, Preview: p}
 		if best, ok := p.Best(); ok && w.MaxPriceCents > 0 && best.EURCents <= w.MaxPriceCents {
 			st.Hit = true
 		}
@@ -183,30 +183,30 @@ const (
 	ReasonNew     = "new"     // a listing the watch hadn't seen appeared
 )
 
-// WatchAlert is one watch with something to tell the user.
-type WatchAlert struct {
+// Alert is one watch with something to tell the user.
+type Alert struct {
 	Watch   Watch
 	Reasons []string
 	// Best is the cheapest buyable listing; ok only when one exists.
-	Best    WatchMatch
+	Best    Match
 	HasBest bool
 	// NewListings are the listings that appeared since the last pass (only
 	// for ReasonNew).
-	NewListings []WatchMatch
+	NewListings []Match
 }
 
-// WatchPass is the result of evaluating all watches: the alerts to send and
+// Pass is the result of evaluating all watches: the alerts to send and
 // the state to remember once they were sent.
-type WatchPass struct {
-	Alerts  []WatchAlert
-	c       *Catalog
+type Pass struct {
+	Alerts  []Alert
+	c       *Watchlist
 	pending []store.WatchState
 }
 
 // Commit stores the evaluated state. Call it after the alerts were
 // delivered: if the send fails, the next pass raises the same alerts
 // again. It is also needed when there are no alerts (baselines, re-arming).
-func (p *WatchPass) Commit(ctx context.Context) error {
+func (p *Pass) Commit(ctx context.Context) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	var errs []error
 	for _, st := range p.pending {
@@ -217,19 +217,19 @@ func (p *WatchPass) Commit(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// EvaluateWatches checks every enabled watch against the current catalog.
+// Evaluate checks every enabled watch against the current catalog.
 //
 // A watch's first pass only records a baseline, except that a price already
 // under target is reported at once (it is actionable). After that it alerts
 // on changes: the price reaching the target (again only after leaving it,
 // or when it drops a further rearmDropPct), a listing that was not buyable
 // being buyable again, and listings not seen before.
-func (c *Catalog) EvaluateWatches(ctx context.Context) (*WatchPass, error) {
-	watches, err := c.Watches(ctx)
+func (c *Watchlist) Evaluate(ctx context.Context) (*Pass, error) {
+	watches, err := c.List(ctx)
 	if err != nil {
 		return nil, err
 	}
-	pass := &WatchPass{c: c}
+	pass := &Pass{c: c}
 	if len(watches) == 0 {
 		return pass, nil
 	}
@@ -257,7 +257,7 @@ func (c *Catalog) EvaluateWatches(ctx context.Context) (*WatchPass, error) {
 				next.KnownSets = append(next.KnownSets, m.SetID)
 			}
 		}
-		alert := WatchAlert{Watch: w, Best: best, HasBest: hasBest}
+		alert := Alert{Watch: w, Best: best, HasBest: hasBest}
 
 		if hasBest && w.MaxPriceCents > 0 && best.EURCents <= w.MaxPriceCents {
 			switch {

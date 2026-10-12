@@ -6,17 +6,17 @@ import (
 	"log/slog"
 	"strings"
 
-	"gunpla-collector/internal/catalog"
 	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/telegram"
+	"gunpla-collector/internal/watchlist"
 )
 
 // maxNewListingsShown caps the new listings named under one watch.
 const maxNewListingsShown = 5
 
-// WatchEvaluator is what RunWatches needs from the catalog.
+// WatchEvaluator is what RunWatches needs from the watchlist.
 type WatchEvaluator interface {
-	EvaluateWatches(ctx context.Context) (*catalog.WatchPass, error)
+	Evaluate(ctx context.Context) (*watchlist.Pass, error)
 }
 
 // RunWatches sends one Telegram message with every watch that has news, then
@@ -24,7 +24,7 @@ type WatchEvaluator interface {
 // failed send is retried by the next run instead of being lost; and running
 // it twice in a row sends nothing the second time.
 func RunWatches(ctx context.Context, ev WatchEvaluator, sender telegram.Sender, logger *slog.Logger) error {
-	pass, err := ev.EvaluateWatches(ctx)
+	pass, err := ev.Evaluate(ctx)
 	if err != nil {
 		return fmt.Errorf("evaluate watches: %w", err)
 	}
@@ -41,18 +41,18 @@ func RunWatches(ctx context.Context, ev WatchEvaluator, sender telegram.Sender, 
 }
 
 // FormatWatchAlerts formats the watchlist message.
-func FormatWatchAlerts(alerts []catalog.WatchAlert) string {
+func FormatWatchAlerts(alerts []watchlist.Alert) string {
 	var b strings.Builder
 	b.WriteString("🎯 <b>Watchlist</b>\n")
 	for _, a := range alerts {
 		fmt.Fprintf(&b, "\n<b>%s</b>\n", esc(a.Watch.Label))
 		for _, reason := range a.Reasons {
 			switch reason {
-			case catalog.ReasonTarget:
+			case watchlist.ReasonTarget:
 				fmt.Fprintf(&b, "• under your %s target: %s\n", formatPrice(a.Watch.MaxPriceCents, "EUR"), offer(a.Best))
-			case catalog.ReasonRestock:
+			case watchlist.ReasonRestock:
 				fmt.Fprintf(&b, "• back in stock: %s\n", offer(a.Best))
-			case catalog.ReasonNew:
+			case watchlist.ReasonNew:
 				n := len(a.NewListings)
 				fmt.Fprintf(&b, "• %d new listing%s\n", n, plural(n))
 				for i, m := range a.NewListings {
@@ -69,13 +69,13 @@ func FormatWatchAlerts(alerts []catalog.WatchAlert) string {
 }
 
 // offer renders a listing as "<shop link> — €48.00".
-func offer(m catalog.WatchMatch) string {
+func offer(m watchlist.Match) string {
 	return fmt.Sprintf("%s — %s", link(m.ShopName, m.URL), priceNote(m))
 }
 
 // priceNote is the listing's EUR price, with the shop's own price when it
 // was converted, and a pre-order or out-of-stock note.
-func priceNote(m catalog.WatchMatch) string {
+func priceNote(m watchlist.Match) string {
 	s := "price unknown"
 	if m.HasEUR {
 		s = formatPrice(m.EURCents, "EUR")
