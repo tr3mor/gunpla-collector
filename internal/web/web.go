@@ -24,6 +24,7 @@ var indexHTML []byte
 // *catalog.Catalog, kept as an interface so handlers are testable against
 // a fake.
 type Catalog interface {
+	Display(cents int, currency string) fx.Price
 	Search(ctx context.Context, f catalog.Filter) ([]store.SetSearchRow, error)
 	Products(ctx context.Context, f catalog.Filter) ([]catalog.Product, error)
 	SpecFromSet(ctx context.Context, setID int64) (catalog.WatchSpec, string, error)
@@ -47,21 +48,12 @@ type Server struct {
 	catalog Catalog
 	shops   Shops
 	logger  *slog.Logger
-	// eurRates maps a currency code to its EUR value; prices in those
-	// currencies are shown converted. EUR (and unknown currencies) pass
-	// through unchanged.
-	eurRates fx.Rates
 	// writeToken, if set, is required on requests that change data.
 	writeToken string
 }
 
 // Option configures a Server.
 type Option func(*Server)
-
-// WithEURRates sets the currency -> EUR conversion rates.
-func WithEURRates(rates fx.Rates) Option {
-	return func(s *Server) { s.eurRates = rates }
-}
 
 func NewServer(c Catalog, shops Shops, logger *slog.Logger, opts ...Option) *Server {
 	s := &Server{catalog: c, shops: shops, logger: logger}
@@ -177,12 +169,10 @@ func (s *Server) toResultJSON(row store.SetSearchRow) searchResultJSON {
 		LowestCents:  row.LowestCents,
 		ScrapedAt:    row.ScrapedAt,
 	}
-	if cents, ok := s.eurRates.ToEUR(row.CurrentCents, row.Currency); ok {
-		out.OriginalCents, out.OriginalCurrency = row.CurrentCents, row.Currency
-		out.CurrentCents = cents
-		out.LowestCents, _ = s.eurRates.ToEUR(row.LowestCents, row.Currency)
-		out.Currency = "EUR"
-	}
+	cur, low := s.catalog.Display(row.CurrentCents, row.Currency), s.catalog.Display(row.LowestCents, row.Currency)
+	out.CurrentCents, out.Currency = cur.Cents, cur.Currency
+	out.LowestCents = low.Cents
+	out.OriginalCents, out.OriginalCurrency = cur.OriginalCents, cur.OriginalCurrency
 	return out
 }
 

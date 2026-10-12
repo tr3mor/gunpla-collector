@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"gunpla-collector/internal/catalog"
+	"gunpla-collector/internal/matcher"
 )
 
 // maxSuggestions caps the near-miss list printed by `match`.
@@ -49,7 +50,11 @@ func runMatch(ctx context.Context, cat *catalog.Catalog, out io.Writer) error {
 	}
 	sort.Strings(methods)
 	for _, m := range methods {
-		fmt.Fprintf(&b, "  %-8s %d listings\n", m, stats.ByMethod[m])
+		label := m
+		if m == matcher.MethodNone {
+			label = "single"
+		}
+		fmt.Fprintf(&b, "  %-8s %d listings\n", label, stats.ByMethod[m])
 	}
 
 	if len(suggestions) > 0 {

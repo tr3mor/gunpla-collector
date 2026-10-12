@@ -1,5 +1,6 @@
-// Package fx converts shop prices to EUR. Stored prices stay in the shop's
-// own currency; callers convert at presentation time (reports, search UI).
+// Package fx owns cross-shop EUR pricing. Stored prices stay in the shop's
+// own currency; callers present and compare them through Rates (reports,
+// search UI, cheapest-listing flags), so the missing-rate rule lives here.
 package fx
 
 import (
@@ -7,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math"
 	"net/http"
 	"time"
 )
@@ -20,18 +20,8 @@ const latestUSDToEURURL = "https://api.frankfurter.dev/v1/latest?base=USD&symbol
 const fetchTimeout = 5 * time.Second
 
 // Rates maps a currency code to its value in EUR. EUR itself and
-// currencies with no entry pass through unconverted.
+// currencies with no entry pass through unconverted (see Display).
 type Rates map[string]float64
-
-// ToEUR converts cents in currency to EUR cents. ok is false (and the
-// input returned unchanged) when the currency is already EUR or unknown.
-func (r Rates) ToEUR(cents int, currency string) (eurCents int, ok bool) {
-	rate, found := r[currency]
-	if !found || currency == "EUR" {
-		return cents, false
-	}
-	return int(math.Round(float64(cents) * rate)), true
-}
 
 // Load returns the rates to use for this process: today's live USD->EUR
 // rate, or fallbackUSD if the lookup fails (logged, never fatal).

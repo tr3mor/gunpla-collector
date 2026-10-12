@@ -7,21 +7,6 @@ import (
 	"testing"
 )
 
-func TestRatesToEUR(t *testing.T) {
-	r := Rates{"USD": 0.9}
-	if got, ok := r.ToEUR(10000, "USD"); !ok || got != 9000 {
-		t.Errorf("USD: got %d, %v", got, ok)
-	}
-	if got, ok := r.ToEUR(333, "USD"); !ok || got != 300 { // 299.7 rounds
-		t.Errorf("rounding: got %d, %v", got, ok)
-	}
-	for _, cur := range []string{"EUR", "GBP"} {
-		if got, ok := r.ToEUR(500, cur); ok || got != 500 {
-			t.Errorf("%s should pass through, got %d, %v", cur, got, ok)
-		}
-	}
-}
-
 func TestFetchUSDToEUR(t *testing.T) {
 	serve := func(status int, body string) *httptest.Server {
 		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

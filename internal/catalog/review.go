@@ -34,12 +34,7 @@ func (c *Catalog) NearMisses(ctx context.Context, includeDismissed bool) ([]Revi
 	for _, r := range active {
 		rowByID[r.SetID] = r
 	}
-	var listings []matcher.Listing
-	for _, r := range all {
-		if _, ok := rowByID[r.ID]; ok { // inactive sets can't be bought
-			listings = append(listings, matcher.Listing{ID: r.ID, Shop: r.Shop, Name: r.Name, Grade: r.Grade, EAN: r.EAN, ProductID: r.ProductID, Manual: r.Manual})
-		}
-	}
+	listings := activeListings(all) // inactive sets can't be bought
 	groups, _ := matcher.Match(listings)
 
 	dismissed, err := c.store.DismissedMatches(ctx)
