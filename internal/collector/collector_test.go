@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"gunpla-collector/internal/fx"
 	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
 )
@@ -44,6 +45,7 @@ type fakeStore struct {
 	eans            map[string]string // external id -> EAN as last applied
 	eanChecks       map[string]store.EANCheck
 	recordCalls     [][]store.EANLookup
+	appliedRates    fx.Rates // rates passed to the last ApplyRun
 }
 
 func newFakeStore() *fakeStore {
@@ -113,7 +115,8 @@ func (f *fakeStore) LastSuccessfulRunSetsFound(ctx context.Context, shopID int64
 // ApplyRun mirrors store.Store.ApplyRun's observable behavior (upsert +
 // price history + deactivate + finish-success) without real transactions —
 // fine for a fake, since these tests only assert on the end state.
-func (f *fakeStore) ApplyRun(ctx context.Context, shopID, runID int64, sets []scraper.ScrapedSet, now string) error {
+func (f *fakeStore) ApplyRun(ctx context.Context, shopID, runID int64, sets []scraper.ScrapedSet, now string, rates fx.Rates) error {
+	f.appliedRates = rates
 	seenIDs := make([]string, 0, len(sets))
 	for _, sc := range sets {
 		f.upsertCalls++
@@ -429,5 +432,18 @@ func TestRun_InterruptedBackfillKeepsProgressAndResumes(t *testing.T) {
 	}
 	if len(sc.lookedUp) != 10 || sc.lookedUp[0] != "id-30" {
 		t.Errorf("resume looked up %v, want only id-30..id-39", sc.lookedUp)
+	}
+}
+
+func TestRun_ConvertsPricesWithTheRunsRates(t *testing.T) {
+	db := newFakeStore()
+	shop := store.Shop{ID: 1, Slug: "fake"}
+	sc := &fakeScraper{sets: []scraper.ScrapedSet{{ExternalID: "1", Name: "MG Kit", Grade: "MG", PriceCents: 1000, Currency: "USD"}}}
+	rates := fx.Rates{"USD": 0.9}
+	if err := Run(context.Background(), db, shop, sc, discardLogger(), Options{Rates: rates}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if db.appliedRates["USD"] != 0.9 {
+		t.Errorf("ApplyRun got rates %v, want the run's rates", db.appliedRates)
 	}
 }

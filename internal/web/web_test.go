@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"gunpla-collector/internal/catalog"
-	"gunpla-collector/internal/fx"
 	"gunpla-collector/internal/store"
 )
 
@@ -25,11 +24,6 @@ type fakeCatalog struct {
 	saved    []catalog.Watch
 	review   []catalog.ReviewRow
 	linked   [][2]int64
-	rates    fx.Rates
-}
-
-func (f *fakeCatalog) Display(cents int, currency string) fx.Price {
-	return f.rates.Display(cents, currency)
 }
 
 func (f *fakeCatalog) Search(ctx context.Context, flt catalog.Filter) ([]store.SetSearchRow, error) {
@@ -194,14 +188,13 @@ func TestHandleIndex_ServesHTML(t *testing.T) {
 
 func TestHandleProducts_EncodesProductsAndConvertsToEUR(t *testing.T) {
 	s, fc := newTestServer()
-	fc.rates = fx.Rates{"USD": 0.9}
 	fc.products = []catalog.Product{
 		{ID: 7, Name: "Kit", Grade: "MG", Listings: []catalog.Listing{
-			{SetSearchRow: store.SetSearchRow{SetID: 1, ProductID: 7, ShopSlug: "us", ShopName: "US", Name: "Kit", URL: "u1", CurrentCents: 10000, LowestCents: 9000, Currency: "USD", MatchMethod: "ean"}, Cheapest: true},
+			{SetSearchRow: store.SetSearchRow{SetID: 1, ProductID: 7, ShopSlug: "us", ShopName: "US", Name: "Kit", URL: "u1", CurrentCents: 10000, LowestCents: 9000, Currency: "USD", EURCents: 9000, LowestEURCents: 8100, HasEUR: true, MatchMethod: "ean"}, Cheapest: true},
 			{SetSearchRow: store.SetSearchRow{SetID: 2, ProductID: 7, ShopSlug: "nl", ShopName: "NL", Name: "Kit", URL: "u2", CurrentCents: 9500, LowestCents: 9500, Currency: "EUR"}},
 		}},
 		{Name: "Solo", Listings: []catalog.Listing{
-			{SetSearchRow: store.SetSearchRow{SetID: 3, ShopSlug: "us", Name: "Solo", URL: "u3", CurrentCents: 1000, LowestCents: 1000, Currency: "USD"}},
+			{SetSearchRow: store.SetSearchRow{SetID: 3, ShopSlug: "us", Name: "Solo", URL: "u3", CurrentCents: 1000, LowestCents: 1000, Currency: "USD", EURCents: 900, LowestEURCents: 900, HasEUR: true}},
 		}},
 	}
 	rec := get(t, s, "/api/products")
@@ -238,7 +231,7 @@ func TestHandleProducts_EmptyIsAnEmptyArray(t *testing.T) {
 
 func TestHandleSearch_ConvertsToEUR(t *testing.T) {
 	s, fc := newTestServer()
-	fc.rates = fx.Rates{"USD": 0.5}
+	fc.rows[1].EURCents, fc.rows[1].LowestEURCents, fc.rows[1].HasEUR = 1500, 1500, true
 	got := decodeSearch(t, get(t, s, "/api/search").Body.Bytes())
 	if len(got) != 2 || got[1].Currency != "EUR" || got[1].CurrentCents != 1500 {
 		t.Errorf("got %+v, want the $30.00 Nu Gundam as EUR 15.00", got)

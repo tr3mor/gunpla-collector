@@ -8,7 +8,6 @@ import (
 	"context"
 	"sync"
 
-	"gunpla-collector/internal/fx"
 	"gunpla-collector/internal/store"
 )
 
@@ -34,24 +33,11 @@ type Store interface {
 // Catalog groups listings into products and answers queries over them.
 type Catalog struct {
 	store Store
-	// rates converts listing prices to EUR so listings priced in different
-	// currencies can be compared.
-	rates fx.Rates
 	// keys caches matcher.NewKey by listing name: normalising is regex-heavy
 	// and a watch preview needs the key of every listing.
 	keys sync.Map
 }
 
-// Option configures a Catalog.
-type Option func(*Catalog)
-
-// WithEURRates sets the rates used to compare prices across currencies.
-func WithEURRates(r fx.Rates) Option { return func(c *Catalog) { c.rates = r } }
-
-func New(s Store, opts ...Option) *Catalog {
-	c := &Catalog{store: s}
-	for _, o := range opts {
-		o(c)
-	}
-	return c
+func New(s Store) *Catalog {
+	return &Catalog{store: s}
 }

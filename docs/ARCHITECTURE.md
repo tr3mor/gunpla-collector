@@ -128,8 +128,8 @@ standing condition is not repeated:
 The first pass of a watch only records a baseline, except that a price
 already under target is reported. Changing a watch's spec or target (or
 re-enabling it) starts it over; renaming does not. Prices in other
-currencies are converted to EUR; a listing in a currency with no rate never
-triggers.
+currencies are compared in EUR (see Prices below); a listing with no EUR
+value never triggers.
 
 The UI saves watches through `POST/PUT/DELETE /api/watches`. Writes need
 `GUNPLA_UI_TOKEN` when set; without it they are limited to same-origin JSON
@@ -158,9 +158,30 @@ read them and the reason on the clipboard.
 Search, watches and near-miss review (above). Search is a text
 (case-insensitive substring), an optional regexp filter on set
 name, and a shop filter. Each result shows the current price, the lowest
-price ever recorded, and a link to the listing. USD prices are converted to
-EUR using the live ECB rate from frankfurter.dev, fetched at startup, with
-`GUNPLA_USD_EUR_RATE` as fallback.
+price ever recorded, and a link to the listing. Prices are shown in EUR
+(see Prices below); the shop's own price is shown next to a converted one.
+
+## Prices and currencies
+
+Every price is converted to EUR once, by `collect`, and stored with the rate
+used: `price_history` keeps the shop's own `price_cents`/`currency` plus
+`eur_cents` and `fx_rate`. Search, "cheapest" flags, watches and reports read
+`eur_cents` and never convert, so the UI and `report` need no rates and no
+network.
+
+- The rate is today's ECB reference rate from frankfurter.dev. If that
+  fails, the previous run's rate is reused; `GUNPLA_USD_EUR_RATE` is only the
+  last resort for a first-ever run. Rates are stored with the data, so a bad
+  rate can be found and fixed from the `fx_rate` column.
+- A price change is a change of the shop's own price. Exchange-rate drift
+  between two runs is not a price change, so it never shows up in reports.
+  The report then shows the old and new price in EUR.
+- "Lowest recorded" is the lowest EUR value ever stored, as it was when it
+  was collected.
+- A currency with no rate is stored without a EUR value: it is shown in its
+  own currency and never compared across shops or triggers a watch.
+- Rows that predate EUR storage are filled in by the next `collect`, using
+  that run's rate (not the rate of their day).
 
 ## Shop selection
 

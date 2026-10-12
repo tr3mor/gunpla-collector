@@ -57,7 +57,7 @@ func (f *shopFixture) scrape(slug string, sets ...scraper.ScrapedSet) {
 			sets[i].Currency = "EUR"
 		}
 	}
-	if err := f.s.ApplyRun(ctx, shop.ID, runID, sets, at); err != nil {
+	if err := f.s.ApplyRun(ctx, shop.ID, runID, sets, at, nil); err != nil {
 		f.t.Fatal(err)
 	}
 	if err := f.s.FinishRunSuccess(ctx, runID, at, len(sets)); err != nil {

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"time"
 
+	"gunpla-collector/internal/fx"
 	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
 )
@@ -38,6 +39,9 @@ type Options struct {
 	// genuinely shrunk its catalog and the guard would otherwise block
 	// every run forever.
 	Force bool
+	// Rates convert the run's prices to EUR as they are stored. A currency
+	// with no rate is stored without a EUR value.
+	Rates fx.Rates
 }
 
 type Store interface {
@@ -45,9 +49,9 @@ type Store interface {
 	FinishRunFailed(ctx context.Context, runID int64, finishedAt string, errMsg string) error
 	LastSuccessfulRunSetsFound(ctx context.Context, shopID int64) (int, bool, error)
 	// ApplyRun persists a fetched set of results as a single atomic
-	// operation: upsert sets, record price history, deactivate sets no
-	// longer seen, and mark the run successful.
-	ApplyRun(ctx context.Context, shopID, runID int64, sets []scraper.ScrapedSet, now string) error
+	// operation: upsert sets, record price history (with EUR values from
+	// rates), deactivate sets no longer seen, and mark the run successful.
+	ApplyRun(ctx context.Context, shopID, runID int64, sets []scraper.ScrapedSet, now string, rates fx.Rates) error
 	// EANChecks and RecordEANLookups back barcode lookups for scrapers
 	// implementing scraper.BarcodeLookup.
 	EANChecks(ctx context.Context, shopID int64) (map[string]store.EANCheck, error)
@@ -93,7 +97,7 @@ func Run(ctx context.Context, db Store, shop store.Shop, s scraper.Scraper, logg
 			"shop", shop.Slug, "sets_found", len(sets), "previous_sets_found", prevCount)
 	}
 
-	if err := db.ApplyRun(ctx, shop.ID, runID, sets, now()); err != nil {
+	if err := db.ApplyRun(ctx, shop.ID, runID, sets, now(), opts.Rates); err != nil {
 		_ = db.FinishRunFailed(ctx, runID, now(), err.Error())
 		return fmt.Errorf("apply run for %s: %w", shop.Slug, err)
 	}

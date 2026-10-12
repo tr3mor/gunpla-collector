@@ -1,13 +1,13 @@
-// Package fx owns cross-shop EUR pricing. Stored prices stay in the shop's
-// own currency; callers present and compare them through Rates (reports,
-// search UI, cheapest-listing flags), so the missing-rate rule lives here.
+// Package fx owns currency conversion to EUR. It is used once, when a
+// collect run stores prices; everything downstream reads the stored EUR
+// value and never converts.
 package fx
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
+	"math"
 	"net/http"
 	"time"
 )
@@ -15,24 +15,34 @@ import (
 // latestUSDToEURURL serves the ECB's daily reference rate; free, no key.
 const latestUSDToEURURL = "https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR"
 
-// fetchTimeout bounds the startup lookup so an unreachable API can't stall
-// `serve` or `report`.
+// fetchTimeout bounds the lookup so an unreachable API can't stall `collect`.
 const fetchTimeout = 5 * time.Second
 
-// Rates maps a currency code to its value in EUR. EUR itself and
-// currencies with no entry pass through unconverted (see Display).
+// Rates maps a currency code to its value in EUR. EUR itself needs no entry.
 type Rates map[string]float64
 
-// Load returns the rates to use for this process: today's live USD->EUR
-// rate, or fallbackUSD if the lookup fails (logged, never fatal).
-func Load(ctx context.Context, fallbackUSD float64, logger *slog.Logger) Rates {
+// ToEUR converts cents in currency to EUR cents, also returning the rate
+// used (1 for EUR). ok is false for a currency with no rate: such a price
+// has no EUR value and isn't comparable with the others.
+func (r Rates) ToEUR(cents int, currency string) (eurCents int, rate float64, ok bool) {
+	if currency == "EUR" {
+		return cents, 1, true
+	}
+	rate, found := r[currency]
+	if !found {
+		return 0, 0, false
+	}
+	return int(math.Round(float64(cents) * rate)), rate, true
+}
+
+// Live returns today's USD->EUR rate from the ECB reference rates. An
+// error means the caller should fall back to a rate it already knows.
+func Live(ctx context.Context) (Rates, error) {
 	rate, err := fetchUSDToEUR(ctx, http.DefaultClient, latestUSDToEURURL)
 	if err != nil {
-		logger.Warn("could not fetch live USD/EUR rate, using fallback", "rate", fallbackUSD, "error", err)
-		return Rates{"USD": fallbackUSD}
+		return nil, err
 	}
-	logger.Info("using live USD/EUR rate", "rate", rate)
-	return Rates{"USD": rate}
+	return Rates{"USD": rate}, nil
 }
 
 func fetchUSDToEUR(ctx context.Context, client *http.Client, url string) (float64, error) {

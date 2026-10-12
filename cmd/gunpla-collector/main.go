@@ -117,7 +117,7 @@ func run(args []string) error {
 	}
 
 	if cmd == "serve" {
-		return serve(ctx, db, logger, addrFlag(flags.addr, cfg.UIAddr), cfg.UIToken, fx.Load(ctx, cfg.USDToEUR, logger))
+		return serve(ctx, db, logger, addrFlag(flags.addr, cfg.UIAddr), cfg.UIToken)
 	}
 
 	sigCtx := ctx // outlives the run timeout, which a long collect may exhaust
@@ -130,7 +130,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		opts := collector.Options{Force: flags.force || cfg.Force}
+		opts := collector.Options{Force: flags.force || cfg.Force, Rates: loadRates(ctx, db, fx.Live, cfg.USDToEUR, logger)}
 		var firstErr error
 		for _, shop := range shops {
 			s, ok := scraper.Get(shop.Slug)
@@ -162,12 +162,11 @@ func run(args []string) error {
 			return err
 		}
 		tg := telegram.NewClient(cfg.TelegramToken, cfg.TelegramChatID)
-		rates := fx.Load(ctx, cfg.USDToEUR, logger)
 		var firstErr error
 		unchanged := 0
 		for _, shop := range shops {
 			logger.Info("starting report", "shop", shop.Slug)
-			outcome, err := reporter.Run(ctx, db, shop, tg, logger, reporter.WithEURRates(rates))
+			outcome, err := reporter.Run(ctx, db, shop, tg, logger)
 			if err != nil {
 				logger.Error("report failed", "shop", shop.Slug, "error", err)
 				if firstErr == nil {
@@ -187,7 +186,7 @@ func run(args []string) error {
 		}
 		// Watches span shops, so they are checked once after every shop's
 		// report rather than per shop.
-		if err := reporter.RunWatches(ctx, catalog.New(db, catalog.WithEURRates(rates)), tg, logger); err != nil {
+		if err := reporter.RunWatches(ctx, catalog.New(db), tg, logger); err != nil {
 			logger.Error("watch alerts failed", "error", err)
 			if firstErr == nil {
 				firstErr = err
@@ -304,10 +303,10 @@ func addrFlag(flagVal, cfgDefault string) string {
 // serve runs the search UI's HTTP server until ctx is cancelled (SIGINT/SIGTERM),
 // then shuts it down gracefully. Unlike collect/report, it has no run-timeout —
 // it's meant to stay up.
-func serve(ctx context.Context, db *store.Store, logger *slog.Logger, addr, writeToken string, rates fx.Rates) error {
+func serve(ctx context.Context, db *store.Store, logger *slog.Logger, addr, writeToken string) error {
 	srv := &http.Server{
 		Addr:    addr,
-		Handler: web.NewServer(catalog.New(db, catalog.WithEURRates(rates)), db, logger, web.WithWriteToken(writeToken)).Handler(),
+		Handler: web.NewServer(catalog.New(db), db, logger, web.WithWriteToken(writeToken)).Handler(),
 	}
 
 	errCh := make(chan error, 1)

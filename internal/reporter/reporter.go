@@ -10,7 +10,6 @@ import (
 	"math"
 	"time"
 
-	"gunpla-collector/internal/fx"
 	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
 	"gunpla-collector/internal/telegram"
@@ -44,15 +43,6 @@ type Store interface {
 	PriceChanges(ctx context.Context, shopID, currentRunID, previousRunID int64) ([]store.PriceChange, error)
 }
 
-// Option configures Run.
-type Option func(*options)
-
-type options struct{ rates fx.Rates }
-
-// WithEURRates makes the report show prices in other currencies (Gundam
-// Store's USD) converted to EUR.
-func WithEURRates(r fx.Rates) Option { return func(o *options) { o.rates = r } }
-
 // Outcome says what Run did for a shop, so the caller can decide whether a
 // combined "no changes" message is warranted.
 type Outcome int
@@ -67,12 +57,7 @@ const (
 	Unchanged
 )
 
-func Run(ctx context.Context, db Store, shop store.Shop, sender telegram.Sender, logger *slog.Logger, opts ...Option) (Outcome, error) {
-	var o options
-	for _, opt := range opts {
-		opt(&o)
-	}
-
+func Run(ctx context.Context, db Store, shop store.Shop, sender telegram.Sender, logger *slog.Logger) (Outcome, error) {
 	latest, ok, err := db.LatestRun(ctx, shop.ID)
 	if err != nil {
 		return Skipped, fmt.Errorf("find latest run: %w", err)
@@ -123,7 +108,6 @@ func Run(ctx context.Context, db Store, shop store.Shop, sender telegram.Sender,
 		if err != nil {
 			return Skipped, fmt.Errorf("query price changes: %w", err)
 		}
-		newSets, removedSets, changes = convertItems(o.rates, newSets), convertItems(o.rates, removedSets), convertChanges(o.rates, changes)
 		reportableChanges := filterReportableChanges(changes)
 		logger.Info("reporting diff", "shop", shop.Slug, "new", len(newSets), "removed", len(removedSets),
 			"changed", len(reportableChanges), "changed_filtered_out", len(changes)-len(reportableChanges))
@@ -145,23 +129,6 @@ func Run(ctx context.Context, db Store, shop store.Shop, sender telegram.Sender,
 		return Skipped, fmt.Errorf("mark reported: %w", err)
 	}
 	return outcome, nil
-}
-
-// Reports show the converted price only; the original currency isn't kept.
-func convertItems(r fx.Rates, items []store.ReportItem) []store.ReportItem {
-	for i := range items {
-		p := r.Display(items[i].PriceCents, items[i].Currency)
-		items[i].PriceCents, items[i].Currency = p.Cents, p.Currency
-	}
-	return items
-}
-
-func convertChanges(r fx.Rates, changes []store.PriceChange) []store.PriceChange {
-	for i := range changes {
-		old, cur := r.Display(changes[i].OldCents, changes[i].Currency), r.Display(changes[i].NewCents, changes[i].Currency)
-		changes[i].OldCents, changes[i].NewCents, changes[i].Currency = old.Cents, cur.Cents, old.Currency
-	}
-	return changes
 }
 
 // filterReportableChanges drops price changes that aren't worth alerting

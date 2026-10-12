@@ -40,7 +40,7 @@ func seedTwoShops(t *testing.T) *store.Store {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := s.ApplyRun(ctx, shop.ID, runID, sh.sets, "2026-01-01T00:01:00Z"); err != nil {
+		if err := s.ApplyRun(ctx, shop.ID, runID, sh.sets, "2026-01-01T00:01:00Z", nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -154,7 +154,7 @@ func collect(t *testing.T, s *store.Store, slug, at string, sets ...scraper.Scra
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ApplyRun(ctx, shop.ID, runID, sets, at); err != nil {
+	if err := s.ApplyRun(ctx, shop.ID, runID, sets, at, nil); err != nil {
 		t.Fatal(err)
 	}
 }

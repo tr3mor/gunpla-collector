@@ -128,10 +128,10 @@ func TestWrites_RequireTheTokenWhenSet(t *testing.T) {
 
 func TestHandleWatches_ListsStatusAndWatchedSets(t *testing.T) {
 	s, fc := newTestServer()
-	row := store.SetSearchRow{SetID: 5, ShopName: "A", Name: "MG RX-78-2", CurrentCents: 4000, Currency: "EUR"}
+	row := store.SetSearchRow{SetID: 5, ShopName: "A", Name: "MG RX-78-2", CurrentCents: 4000, Currency: "EUR", HasEUR: true, EURCents: 4000}
 	fc.statuses = []catalog.WatchStatus{
 		{Watch: catalog.Watch{ID: 1, Label: "on", Enabled: true}, Hit: true, Preview: catalog.WatchPreview{
-			Matches:  []catalog.WatchMatch{{SetSearchRow: row, Best: true, HasEUR: true, EURCents: 4000}, {SetSearchRow: store.SetSearchRow{SetID: 6}, Excluded: true}},
+			Matches:  []catalog.WatchMatch{{SetSearchRow: row, Best: true}, {SetSearchRow: store.SetSearchRow{SetID: 6}, Excluded: true}},
 			Variants: []catalog.Variant{{Label: "Ver.Ka", Selected: true}, {Label: "Base release"}},
 		}},
 		{Watch: catalog.Watch{ID: 2, Label: "paused"}, Preview: catalog.WatchPreview{Matches: []catalog.WatchMatch{{SetSearchRow: store.SetSearchRow{SetID: 9}}}}},
