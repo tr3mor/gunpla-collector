@@ -54,7 +54,7 @@ func TestApplyRun_PersistsSetsPriceHistoryAndFinishesRun(t *testing.T) {
 		{ExternalID: "ext-1", URL: "https://example.com/1", Name: "Kit One", Grade: "MG", PriceCents: 5000, Currency: "EUR", Availability: inStock},
 		{ExternalID: "ext-2", URL: "https://example.com/2", Name: "Kit Two", Grade: "HG", PriceCents: 3000, Currency: "EUR", Availability: inStock},
 	}
-	if err := s.ApplyRun(ctx, shop.ID, runID, sets, "2026-01-01T00:01:00Z"); err != nil {
+	if err := s.ApplyRun(ctx, shop.ID, runID, sets, "2026-01-01T00:01:00Z", nil); err != nil {
 		t.Fatalf("ApplyRun: %v", err)
 	}
 
@@ -95,7 +95,7 @@ func TestApplyRun_DeactivatesSetsMissingFromLatestRun(t *testing.T) {
 		{ExternalID: "ext-1", URL: "u1", Name: "Kit One", Grade: "MG", PriceCents: 5000, Currency: "EUR"},
 		{ExternalID: "ext-2", URL: "u2", Name: "Kit Two", Grade: "HG", PriceCents: 3000, Currency: "EUR"},
 	}
-	if err := s.ApplyRun(ctx, shop.ID, run1, sets1, "2026-01-01T00:01:00Z"); err != nil {
+	if err := s.ApplyRun(ctx, shop.ID, run1, sets1, "2026-01-01T00:01:00Z", nil); err != nil {
 		t.Fatalf("ApplyRun 1: %v", err)
 	}
 
@@ -108,7 +108,7 @@ func TestApplyRun_DeactivatesSetsMissingFromLatestRun(t *testing.T) {
 	sets2 := []scraper.ScrapedSet{
 		{ExternalID: "ext-1", URL: "u1", Name: "Kit One", Grade: "MG", PriceCents: 5000, Currency: "EUR"},
 	}
-	if err := s.ApplyRun(ctx, shop.ID, run2, sets2, "2026-01-02T00:01:00Z"); err != nil {
+	if err := s.ApplyRun(ctx, shop.ID, run2, sets2, "2026-01-02T00:01:00Z", nil); err != nil {
 		t.Fatalf("ApplyRun 2: %v", err)
 	}
 
@@ -147,7 +147,7 @@ func TestApplyRun_RollsBackOnError(t *testing.T) {
 		{ExternalID: "ext-1", URL: "u1", Name: "Kit One", Grade: "MG", PriceCents: 5000, Currency: "EUR"},
 		{ExternalID: "ext-2", URL: "u2", Name: "Kit Two", Grade: "HG", PriceCents: 3000, Currency: "EUR"},
 	}
-	if err := s.ApplyRun(ctx, bogusShopID, runID, sets, "2026-01-01T00:01:00Z"); err == nil {
+	if err := s.ApplyRun(ctx, bogusShopID, runID, sets, "2026-01-01T00:01:00Z", nil); err == nil {
 		t.Fatal("expected error from foreign key violation, got nil")
 	}
 
@@ -297,10 +297,10 @@ func TestInsertPriceHistory_RejectsDuplicateSetRunPair(t *testing.T) {
 		t.Fatalf("UpsertSet: %v", err)
 	}
 
-	if err := s.InsertPriceHistory(ctx, setID, runID, 5000, "EUR", "", "2026-01-01T00:01:00Z"); err != nil {
+	if err := s.InsertPriceHistory(ctx, setID, runID, 5000, "EUR", 5000, 1, "", "2026-01-01T00:01:00Z"); err != nil {
 		t.Fatalf("InsertPriceHistory (first): %v", err)
 	}
-	if err := s.InsertPriceHistory(ctx, setID, runID, 5000, "EUR", "", "2026-01-01T00:01:00Z"); err == nil {
+	if err := s.InsertPriceHistory(ctx, setID, runID, 5000, "EUR", 5000, 1, "", "2026-01-01T00:01:00Z"); err == nil {
 		t.Fatal("expected error inserting a second price_history row for the same (set_id, run_id), got nil")
 	}
 }
@@ -325,7 +325,7 @@ func TestReportQueries(t *testing.T) {
 		if err != nil {
 			t.Fatalf("StartRun: %v", err)
 		}
-		if err := s.ApplyRun(ctx, shop.ID, runID, sets, appliedAt); err != nil {
+		if err := s.ApplyRun(ctx, shop.ID, runID, sets, appliedAt, nil); err != nil {
 			t.Fatalf("ApplyRun: %v", err)
 		}
 		return runID
@@ -429,7 +429,7 @@ func TestPriceChanges_InStock(t *testing.T) {
 		if err != nil {
 			t.Fatalf("StartRun: %v", err)
 		}
-		if err := s.ApplyRun(ctx, shop.ID, runID, sets, appliedAt); err != nil {
+		if err := s.ApplyRun(ctx, shop.ID, runID, sets, appliedAt, nil); err != nil {
 			t.Fatalf("ApplyRun: %v", err)
 		}
 		return runID
@@ -588,7 +588,7 @@ func TestLatestUnreportedRun_AllReported(t *testing.T) {
 	sets := []scraper.ScrapedSet{
 		{ExternalID: "ext-1", URL: "u1", Name: "Kit One", Grade: "MG", PriceCents: 5000, Currency: "EUR"},
 	}
-	if err := s.ApplyRun(ctx, shop.ID, runID, sets, "2026-01-01T00:01:00Z"); err != nil {
+	if err := s.ApplyRun(ctx, shop.ID, runID, sets, "2026-01-01T00:01:00Z", nil); err != nil {
 		t.Fatalf("ApplyRun: %v", err)
 	}
 
@@ -624,7 +624,7 @@ func TestLatestUnreportedRun_SkipsIntermediateRuns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StartRun 1: %v", err)
 	}
-	if err := s.ApplyRun(ctx, shop.ID, run1, nil, "2026-01-01T00:01:00Z"); err != nil {
+	if err := s.ApplyRun(ctx, shop.ID, run1, nil, "2026-01-01T00:01:00Z", nil); err != nil {
 		t.Fatalf("ApplyRun 1: %v", err)
 	}
 	if err := s.MarkReported(ctx, shop.ID, "2026-01-01T00:02:00Z"); err != nil {
@@ -635,14 +635,14 @@ func TestLatestUnreportedRun_SkipsIntermediateRuns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StartRun 2: %v", err)
 	}
-	if err := s.ApplyRun(ctx, shop.ID, run2, nil, "2026-01-02T00:01:00Z"); err != nil {
+	if err := s.ApplyRun(ctx, shop.ID, run2, nil, "2026-01-02T00:01:00Z", nil); err != nil {
 		t.Fatalf("ApplyRun 2: %v", err)
 	}
 	run3, err := s.StartRun(ctx, shop.ID, "2026-01-03T00:00:00Z")
 	if err != nil {
 		t.Fatalf("StartRun 3: %v", err)
 	}
-	if err := s.ApplyRun(ctx, shop.ID, run3, nil, "2026-01-03T00:01:00Z"); err != nil {
+	if err := s.ApplyRun(ctx, shop.ID, run3, nil, "2026-01-03T00:01:00Z", nil); err != nil {
 		t.Fatalf("ApplyRun 3: %v", err)
 	}
 

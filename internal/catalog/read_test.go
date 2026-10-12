@@ -5,25 +5,24 @@ import (
 	"errors"
 	"testing"
 
-	"gunpla-collector/internal/fx"
 	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
 )
 
 // rowsStore serves fixed search rows; the other Store methods are unused
-// by the read model.
+// by the read model. Like the real store, it gives EUR rows a EUR value.
 type rowsStore struct {
 	Store
 	rows []store.SetSearchRow
 }
 
 func (f *rowsStore) SearchSets(ctx context.Context, shopSlug string) ([]store.SetSearchRow, error) {
-	if shopSlug == "" {
-		return f.rows, nil
-	}
 	var out []store.SetSearchRow
 	for _, r := range f.rows {
-		if r.ShopSlug == shopSlug {
+		if r.Currency == "EUR" && !r.HasEUR {
+			r.EURCents, r.LowestEURCents, r.HasEUR = r.CurrentCents, r.LowestCents, true
+		}
+		if shopSlug == "" || r.ShopSlug == shopSlug {
 			out = append(out, r)
 		}
 	}
@@ -137,17 +136,17 @@ func TestProducts_GroupsListingsAndMarksCheapest(t *testing.T) {
 	}
 }
 
-func TestProducts_ComparesAcrossCurrencies(t *testing.T) {
+func TestProducts_ComparesInEUR(t *testing.T) {
 	c := New(&rowsStore{rows: []store.SetSearchRow{
-		// $100 = €90: cheaper than the €95 listing despite the bigger number.
-		{SetID: 1, ProductID: 7, ShopSlug: "us", Name: "Kit", CurrentCents: 10000, Currency: "USD"},
-		{SetID: 2, ProductID: 7, ShopSlug: "nl", Name: "Kit", CurrentCents: 9500, Currency: "EUR"},
+		// $100 stored as €90: cheaper than the €95 listing despite the bigger number.
+		{SetID: 1, ProductID: 7, ShopSlug: "us", Name: "Kit", CurrentCents: 10000, Currency: "USD", EURCents: 9000, HasEUR: true},
+		{SetID: 2, ProductID: 7, ShopSlug: "nl", Name: "Kit", CurrentCents: 9500, Currency: "EUR", EURCents: 9500, HasEUR: true},
 		// One shop only: nothing to compare, so no cheapest flag.
-		{SetID: 3, ProductID: 8, ShopSlug: "us", Name: "Solo", CurrentCents: 1000, Currency: "USD"},
-		// A currency with no rate is not comparable.
+		{SetID: 3, ProductID: 8, ShopSlug: "us", Name: "Solo", CurrentCents: 1000, Currency: "USD", EURCents: 900, HasEUR: true},
+		// A listing with no EUR value is not comparable.
 		{SetID: 4, ProductID: 9, ShopSlug: "us", Name: "Odd", CurrentCents: 1, Currency: "JPY"},
-		{SetID: 5, ProductID: 9, ShopSlug: "nl", Name: "Odd", CurrentCents: 9999, Currency: "EUR"},
-	}}, WithEURRates(fx.Rates{"USD": 0.9}))
+		{SetID: 5, ProductID: 9, ShopSlug: "nl", Name: "Odd", CurrentCents: 9999, Currency: "EUR", EURCents: 9999, HasEUR: true},
+	}})
 
 	got, err := c.Products(context.Background(), Filter{})
 	if err != nil {

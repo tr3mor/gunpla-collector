@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"gunpla-collector/internal/catalog"
-	"gunpla-collector/internal/fx"
 	"gunpla-collector/internal/store"
 )
 
@@ -24,7 +23,6 @@ var indexHTML []byte
 // *catalog.Catalog, kept as an interface so handlers are testable against
 // a fake.
 type Catalog interface {
-	Display(cents int, currency string) fx.Price
 	Search(ctx context.Context, f catalog.Filter) ([]store.SetSearchRow, error)
 	Products(ctx context.Context, f catalog.Filter) ([]catalog.Product, error)
 	SpecFromSet(ctx context.Context, setID int64) (catalog.WatchSpec, string, error)
@@ -169,10 +167,12 @@ func (s *Server) toResultJSON(row store.SetSearchRow) searchResultJSON {
 		LowestCents:  row.LowestCents,
 		ScrapedAt:    row.ScrapedAt,
 	}
-	cur, low := s.catalog.Display(row.CurrentCents, row.Currency), s.catalog.Display(row.LowestCents, row.Currency)
-	out.CurrentCents, out.Currency = cur.Cents, cur.Currency
-	out.LowestCents = low.Cents
-	out.OriginalCents, out.OriginalCurrency = cur.OriginalCents, cur.OriginalCurrency
+	// Show EUR when the listing has it, keeping the shop's own price for
+	// display next to it. A listing without a EUR value stays as it is.
+	if row.HasEUR && row.Currency != "EUR" {
+		out.OriginalCents, out.OriginalCurrency = row.CurrentCents, row.Currency
+		out.CurrentCents, out.LowestCents, out.Currency = row.EURCents, row.LowestEURCents, "EUR"
+	}
 	return out
 }
 

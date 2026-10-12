@@ -34,7 +34,7 @@ func seedTwoShops(t *testing.T) *Store {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := s.ApplyRun(ctx, shop.ID, runID, sh.sets, "2026-01-01T00:01:00Z"); err != nil {
+		if err := s.ApplyRun(ctx, shop.ID, runID, sh.sets, "2026-01-01T00:01:00Z", nil); err != nil {
 			t.Fatal(err)
 		}
 	}

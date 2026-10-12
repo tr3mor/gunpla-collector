@@ -47,7 +47,7 @@ with `--help` for details.
 | `GUNPLA_FORCE`              | unset                           | same as `collect --force`                      |
 | `GUNPLA_UI_ADDR`            | `:8080`                         | `serve` listen address                         |
 | `GUNPLA_UI_TOKEN`           | unset                           | if set, changes made in the UI need this token |
-| `GUNPLA_USD_EUR_RATE`       | `0.89`                          | fallback rate if the live ECB rate is unreachable |
+| `GUNPLA_USD_EUR_RATE`       | `0.89`                          | last-resort rate, used only when neither the live ECB rate nor the last run's rate is available |
 
 ## Running with Docker
 

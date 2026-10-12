@@ -125,10 +125,6 @@ type WatchMatch struct {
 	Pinned bool
 	// Best marks the cheapest buyable, non-excluded match.
 	Best bool
-	// EURCents is the current price in EUR; HasEUR is false for a currency
-	// with no rate.
-	EURCents int
-	HasEUR   bool
 }
 
 // Buyable reports whether the listing can be bought now and is priced.
@@ -170,7 +166,6 @@ func (p WatchPreview) Live() []WatchMatch {
 // snapshot is the active catalog with matcher keys, loaded once so many
 // watches can be resolved without re-reading or re-normalising it.
 type snapshot struct {
-	c    *Catalog
 	rows []store.SetSearchRow
 	keys []matcher.Key
 }
@@ -180,7 +175,7 @@ func (c *Catalog) snapshot(ctx context.Context) (*snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	snap := &snapshot{c: c, rows: rows, keys: make([]matcher.Key, len(rows))}
+	snap := &snapshot{rows: rows, keys: make([]matcher.Key, len(rows))}
 	for i, r := range rows {
 		snap.keys[i] = c.key(r.Name)
 	}
@@ -235,7 +230,6 @@ func (c *Catalog) PreviewWatch(ctx context.Context, spec WatchSpec) (WatchPrevie
 }
 
 func (snap *snapshot) preview(spec WatchSpec) WatchPreview {
-	c := snap.c
 	byVariant := map[string]*Variant{}
 	var matches []WatchMatch
 	for i, row := range snap.rows {
@@ -254,16 +248,14 @@ func (snap *snapshot) preview(spec WatchSpec) WatchPreview {
 				byVariant[vk] = v
 			}
 			v.Listings++
-			if cents, ok := c.buyableEUR(row); ok && (!v.HasBest || cents < v.BestCents) {
+			if cents, ok := buyableEUR(row); ok && (!v.HasBest || cents < v.BestCents) {
 				v.HasBest, v.BestCents, v.BestShop = true, cents, row.ShopName
 			}
 		}
 		if (suit && selected) || pinned {
-			cents, hasEUR := c.rates.Compare(row.CurrentCents, row.Currency)
 			matches = append(matches, WatchMatch{
 				SetSearchRow: row, Variant: vk, Pinned: pinned,
 				Excluded: slices.Contains(spec.Exclude, row.SetID),
-				EURCents: cents, HasEUR: hasEUR,
 			})
 		}
 	}
@@ -319,15 +311,6 @@ func (s WatchSpec) sameSuit(row store.SetSearchRow, k matcher.Key) bool {
 		return false
 	}
 	return matcher.SameSuit(matcher.Key{Model: s.Model, Tokens: s.Tokens}, k, s.Loose)
-}
-
-// buyableEUR is the listing's price in EUR if it can be bought now and the
-// currency is convertible.
-func (c *Catalog) buyableEUR(row store.SetSearchRow) (int, bool) {
-	if row.Availability == scraper.AvailabilityOutOfStock {
-		return 0, false
-	}
-	return c.rates.Compare(row.CurrentCents, row.Currency)
 }
 
 // variantLabel renders a listing's version words for people: "Ver.Ka",

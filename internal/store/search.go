@@ -14,19 +14,27 @@ type SetSearchRow struct {
 	SetID int64
 	// ProductID groups listings of the same kit across shops; 0 until
 	// `match` has run.
-	ProductID    int64
-	ProductName  string
-	MatchMethod  string
-	ShopSlug     string
-	ShopName     string
-	Name         string
-	Grade        string
-	URL          string
+	ProductID   int64
+	ProductName string
+	MatchMethod string
+	ShopSlug    string
+	ShopName    string
+	Name        string
+	Grade       string
+	URL         string
+	// CurrentCents/Currency are the shop's own price; LowestCents is the
+	// lowest of those ever recorded.
 	CurrentCents int
 	Currency     string
 	Availability scraper.Availability
 	LowestCents  int
-	ScrapedAt    string
+	// EURCents and LowestEURCents are the same prices in EUR, converted when
+	// they were collected. HasEUR is false for a currency that had no rate:
+	// such a listing is shown in its own currency and isn't comparable.
+	EURCents       int
+	LowestEURCents int
+	HasEUR         bool
+	ScrapedAt      string
 }
 
 // SearchSets returns every currently-active set (optionally scoped to one
@@ -39,17 +47,17 @@ func (s *Store) SearchSets(ctx context.Context, shopSlug string) ([]SetSearchRow
 		SELECT s.id, COALESCE(s.product_id, 0), COALESCE(p.name, ''), COALESCE(s.match_method, ''),
 		       sh.slug, sh.name, s.name, COALESCE(s.grade, ''), s.url,
 		       cur.price_cents, cur.currency, COALESCE(cur.availability, ''), cur.scraped_at,
-		       low.min_price
+		       low.min_price, COALESCE(cur.eur_cents, 0), COALESCE(low.min_eur, 0), cur.eur_cents IS NOT NULL
 		FROM sets s
 		JOIN shops sh ON sh.id = s.shop_id
 		LEFT JOIN products p ON p.id = s.product_id
 		JOIN (
-			SELECT set_id, price_cents, currency, availability, scraped_at
+			SELECT set_id, price_cents, currency, eur_cents, availability, scraped_at
 			FROM price_history
 			WHERE id IN (SELECT MAX(id) FROM price_history GROUP BY set_id)
 		) cur ON cur.set_id = s.id
 		JOIN (
-			SELECT set_id, MIN(price_cents) AS min_price
+			SELECT set_id, MIN(price_cents) AS min_price, MIN(eur_cents) AS min_eur
 			FROM price_history
 			GROUP BY set_id
 		) low ON low.set_id = s.id
@@ -71,7 +79,8 @@ func (s *Store) SearchSets(ctx context.Context, shopSlug string) ([]SetSearchRow
 	for rows.Next() {
 		var r SetSearchRow
 		if err := rows.Scan(&r.SetID, &r.ProductID, &r.ProductName, &r.MatchMethod, &r.ShopSlug, &r.ShopName, &r.Name, &r.Grade, &r.URL,
-			&r.CurrentCents, &r.Currency, &r.Availability, &r.ScrapedAt, &r.LowestCents); err != nil {
+			&r.CurrentCents, &r.Currency, &r.Availability, &r.ScrapedAt, &r.LowestCents,
+			&r.EURCents, &r.LowestEURCents, &r.HasEUR); err != nil {
 			return nil, fmt.Errorf("scan search row: %w", err)
 		}
 		results = append(results, r)

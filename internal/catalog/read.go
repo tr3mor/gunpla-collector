@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"gunpla-collector/internal/fx"
 	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
 )
@@ -128,7 +127,7 @@ func (c *Catalog) Products(ctx context.Context, f Filter) ([]Product, error) {
 	out := make([]Product, 0, len(order))
 	for _, key := range order {
 		p := byKey[key]
-		c.markCheapest(p.Listings)
+		markCheapest(p.Listings)
 		out = append(out, *p)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
@@ -142,9 +141,9 @@ func (c *Catalog) Products(ctx context.Context, f Filter) ([]Product, error) {
 
 // markCheapest flags the cheapest in-stock (or pre-order) listing, but only
 // when at least two shops list the kit — a lone listing is trivially
-// "cheapest". Stock, currencies and missing rates are fx.Rates.Cheapest's
-// concern.
-func (c *Catalog) markCheapest(ls []Listing) {
+// "cheapest". Prices are compared in EUR; out-of-stock listings and ones
+// with no EUR value can't win, and tied listings are all flagged.
+func markCheapest(ls []Listing) {
 	shops := map[string]bool{}
 	for _, l := range ls {
 		shops[l.ShopSlug] = true
@@ -152,18 +151,23 @@ func (c *Catalog) markCheapest(ls []Listing) {
 	if len(shops) < 2 {
 		return
 	}
-	offers := make([]fx.Offer, len(ls))
-	for i, l := range ls {
-		offers[i] = fx.Offer{Cents: l.CurrentCents, Currency: l.Currency, Excluded: l.Availability == scraper.AvailabilityOutOfStock}
+	best, found := 0, false
+	for _, l := range ls {
+		if cents, ok := buyableEUR(l.SetSearchRow); ok && (!found || cents < best) {
+			best, found = cents, true
+		}
 	}
-	for i, cheapest := range c.rates.Cheapest(offers) {
-		ls[i].Cheapest = cheapest
+	for i, l := range ls {
+		cents, ok := buyableEUR(l.SetSearchRow)
+		ls[i].Cheapest = found && ok && cents == best
 	}
 }
 
-// Display presents a listing price in EUR when a rate exists, keeping the
-// original (see fx.Rates.Display). Consumers show prices through the
-// catalog so the rates are wired once.
-func (c *Catalog) Display(cents int, currency string) fx.Price {
-	return c.rates.Display(cents, currency)
+// buyableEUR is the listing's price in EUR if it can be bought now and has
+// a EUR value.
+func buyableEUR(row store.SetSearchRow) (int, bool) {
+	if row.Availability == scraper.AvailabilityOutOfStock || !row.HasEUR {
+		return 0, false
+	}
+	return row.EURCents, true
 }

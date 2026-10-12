@@ -30,7 +30,7 @@ func TestSearchSets(t *testing.T) {
 		if err != nil {
 			t.Fatalf("StartRun: %v", err)
 		}
-		if err := s.ApplyRun(ctx, shopID, runID, sets, appliedAt); err != nil {
+		if err := s.ApplyRun(ctx, shopID, runID, sets, appliedAt, nil); err != nil {
 			t.Fatalf("ApplyRun: %v", err)
 		}
 		return runID

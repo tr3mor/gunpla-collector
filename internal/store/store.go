@@ -5,10 +5,12 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	_ "github.com/mattn/go-sqlite3"
 
+	"gunpla-collector/internal/fx"
 	"gunpla-collector/internal/scraper"
 )
 
@@ -278,20 +280,28 @@ func (s *Store) RecordEANLookups(ctx context.Context, shopID int64, lookups []EA
 	return tx.Commit()
 }
 
-func (s *Store) InsertPriceHistory(ctx context.Context, setID, runID int64, priceCents int, currency string, availability scraper.Availability, scrapedAt string) error {
+// InsertPriceHistory records one price. eurCents/rate are the EUR value and
+// the rate it was converted with; rate 0 means the currency had no rate, and
+// the row is stored without a EUR value.
+func (s *Store) InsertPriceHistory(ctx context.Context, setID, runID int64, priceCents int, currency string, eurCents int, rate float64, availability scraper.Availability, scrapedAt string) error {
+	var eur, fxRate any
+	if rate != 0 {
+		eur, fxRate = eurCents, rate
+	}
 	_, err := s.conn.ExecContext(ctx,
-		`INSERT INTO price_history (set_id, run_id, price_cents, currency, availability, scraped_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		setID, runID, priceCents, currency, nullIfEmpty(string(availability)), scrapedAt)
+		`INSERT INTO price_history (set_id, run_id, price_cents, currency, eur_cents, fx_rate, availability, scraped_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		setID, runID, priceCents, currency, eur, fxRate, nullIfEmpty(string(availability)), scrapedAt)
 	return err
 }
 
 // ApplyRun persists a completed scrape's results as a single transaction:
 // upserts every set, records its price history, deactivates sets no longer
-// seen, and marks the run successful. All-or-nothing, so a crash or
+// seen, and marks the run successful. Prices are converted to EUR with rates
+// as they are stored. All-or-nothing, so a crash or
 // cancellation mid-run rolls back cleanly instead of leaving sets, price
 // history, and the run's status inconsistent with each other.
-func (s *Store) ApplyRun(ctx context.Context, shopID, runID int64, sets []scraper.ScrapedSet, now string) error {
+func (s *Store) ApplyRun(ctx context.Context, shopID, runID int64, sets []scraper.ScrapedSet, now string, rates fx.Rates) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -305,7 +315,8 @@ func (s *Store) ApplyRun(ctx context.Context, shopID, runID int64, sets []scrape
 		if err != nil {
 			return fmt.Errorf("upsert set %s: %w", sc.ExternalID, err)
 		}
-		if err := txStore.InsertPriceHistory(ctx, setID, runID, sc.PriceCents, sc.Currency, sc.Availability, now); err != nil {
+		eur, rate, _ := rates.ToEUR(sc.PriceCents, sc.Currency)
+		if err := txStore.InsertPriceHistory(ctx, setID, runID, sc.PriceCents, sc.Currency, eur, rate, sc.Availability, now); err != nil {
 			return fmt.Errorf("insert price history for set %s: %w", sc.ExternalID, err)
 		}
 	}
@@ -319,6 +330,40 @@ func (s *Store) ApplyRun(ctx context.Context, shopID, runID int64, sets []scrape
 	}
 
 	return tx.Commit()
+}
+
+// BackfillEUR gives rows without a EUR value one, using rates: the rows that
+// predate EUR storage, and any written while a currency had no rate. It
+// returns how many rows it filled in. Old rows get today's rate rather than
+// the rate of their day, which is close enough for history.
+func (s *Store) BackfillEUR(ctx context.Context, rates fx.Rates) (int, error) {
+	total := 0
+	for currency, rate := range rates {
+		res, err := s.conn.ExecContext(ctx,
+			`UPDATE price_history SET eur_cents = CAST(ROUND(price_cents * ?) AS INTEGER), fx_rate = ?
+			 WHERE eur_cents IS NULL AND currency = ?`, rate, rate, currency)
+		if err != nil {
+			return total, fmt.Errorf("backfill %s: %w", currency, err)
+		}
+		n, _ := res.RowsAffected()
+		total += int(n)
+	}
+	return total, nil
+}
+
+// LastRate is the rate most recently used to store a price in currency; ok
+// is false if none was stored yet.
+func (s *Store) LastRate(ctx context.Context, currency string) (rate float64, ok bool, err error) {
+	err = s.conn.QueryRowContext(ctx,
+		`SELECT fx_rate FROM price_history WHERE currency = ? AND fx_rate IS NOT NULL ORDER BY id DESC LIMIT 1`,
+		currency).Scan(&rate)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("last %s rate: %w", currency, err)
+	}
+	return rate, true, nil
 }
 
 // DeactivateMissing marks is_active=0/removed_at=now for every active set
@@ -404,7 +449,7 @@ func (s *Store) MarkReported(ctx context.Context, shopID int64, now string) erro
 // previousRunID (covers both brand-new sets and reactivated ones).
 func (s *Store) NewSets(ctx context.Context, shopID, currentRunID, previousRunID int64) ([]ReportItem, error) {
 	rows, err := s.conn.QueryContext(ctx,
-		`SELECT s.name, s.url, COALESCE(s.grade, ''), ph.price_cents, ph.currency, COALESCE(ph.availability, '')
+		`SELECT s.name, s.url, COALESCE(s.grade, ''), `+displayPrice("ph")+`, COALESCE(ph.availability, '')
 		 FROM sets s
 		 JOIN price_history ph ON ph.set_id = s.id AND ph.run_id = ?
 		 WHERE s.shop_id = ?
@@ -421,7 +466,7 @@ func (s *Store) NewSets(ctx context.Context, shopID, currentRunID, previousRunID
 // in currentRunID.
 func (s *Store) RemovedSets(ctx context.Context, shopID, currentRunID, previousRunID int64) ([]ReportItem, error) {
 	rows, err := s.conn.QueryContext(ctx,
-		`SELECT s.name, s.url, COALESCE(s.grade, ''), ph.price_cents, ph.currency, COALESCE(ph.availability, '')
+		`SELECT s.name, s.url, COALESCE(s.grade, ''), `+displayPrice("ph")+`, COALESCE(ph.availability, '')
 		 FROM sets s
 		 JOIN price_history ph ON ph.set_id = s.id AND ph.run_id = ?
 		 WHERE s.shop_id = ?
@@ -434,11 +479,26 @@ func (s *Store) RemovedSets(ctx context.Context, shopID, currentRunID, previousR
 	return scanReportItems(rows)
 }
 
+// displayPrice selects the price (cents, currency) of a price_history row
+// as reports show it: in EUR when the row has a EUR value, else in the
+// shop's own currency.
+func displayPrice(alias string) string {
+	return `CASE WHEN ` + alias + `.eur_cents IS NOT NULL THEN ` + alias + `.eur_cents ELSE ` + alias + `.price_cents END, ` +
+		`CASE WHEN ` + alias + `.eur_cents IS NOT NULL THEN 'EUR' ELSE ` + alias + `.currency END`
+}
+
 // PriceChanges returns sets present in both runs whose price differs, along
-// with each set's stock status as of currentRunID.
+// with each set's stock status as of currentRunID. A change is a difference
+// in the shop's own price, so exchange-rate drift between runs never counts;
+// the prices returned are EUR when both runs have one, else the shop's own.
 func (s *Store) PriceChanges(ctx context.Context, shopID, currentRunID, previousRunID int64) ([]PriceChange, error) {
+	const bothEUR = `phOld.eur_cents IS NOT NULL AND phNew.eur_cents IS NOT NULL`
 	rows, err := s.conn.QueryContext(ctx,
-		`SELECT s.name, COALESCE(s.grade, ''), phOld.price_cents, phNew.price_cents, phNew.currency, COALESCE(phNew.availability, '')
+		`SELECT s.name, COALESCE(s.grade, ''),
+		        CASE WHEN `+bothEUR+` THEN phOld.eur_cents ELSE phOld.price_cents END,
+		        CASE WHEN `+bothEUR+` THEN phNew.eur_cents ELSE phNew.price_cents END,
+		        CASE WHEN `+bothEUR+` THEN 'EUR' ELSE phNew.currency END,
+		        COALESCE(phNew.availability, '')
 		 FROM sets s
 		 JOIN price_history phOld ON phOld.set_id = s.id AND phOld.run_id = ?
 		 JOIN price_history phNew ON phNew.set_id = s.id AND phNew.run_id = ?
