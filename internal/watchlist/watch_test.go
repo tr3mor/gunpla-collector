@@ -1,4 +1,4 @@
-package catalog
+package watchlist
 
 import (
 	"context"
@@ -74,7 +74,7 @@ const (
 	oos     = scraper.AvailabilityOutOfStock
 )
 
-func reasons(p *WatchPass) [][]string {
+func reasons(p *Pass) [][]string {
 	var out [][]string
 	for _, a := range p.Alerts {
 		out = append(out, a.Reasons)
@@ -83,9 +83,9 @@ func reasons(p *WatchPass) [][]string {
 }
 
 // pass evaluates and commits, returning the alerts raised.
-func pass(t *testing.T, c *Catalog) *WatchPass {
+func pass(t *testing.T, c *Watchlist) *Pass {
 	t.Helper()
-	p, err := c.EvaluateWatches(context.Background())
+	p, err := c.Evaluate(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func pass(t *testing.T, c *Catalog) *WatchPass {
 
 func kaWatch(max int, restock, newL bool) Watch {
 	return Watch{Label: "FAZZ Ver.Ka", Enabled: true, MaxPriceCents: max, OnRestock: restock, OnNew: newL,
-		Spec: WatchSpec{Grade: "MG", Model: "fa010s", Tokens: []string{"armor", "full", "zz"}, Variants: []string{"verka"}}}
+		Spec: Spec{Grade: "MG", Model: "fa010s", Tokens: []string{"armor", "full", "zz"}, Variants: []string{"verka"}}}
 }
 
 func TestEvaluateWatches_TargetAlertsOnceAndRearms(t *testing.T) {
@@ -105,7 +105,7 @@ func TestEvaluateWatches_TargetAlertsOnceAndRearms(t *testing.T) {
 	c := New(f.s)
 	ctx := context.Background()
 	f.scrape("a", set("1", "MG Full Armor ZZ Gundam Ver.Ka", 15000, inStock))
-	if _, err := c.SaveWatch(ctx, kaWatch(12000, false, false)); err != nil {
+	if _, err := c.Save(ctx, kaWatch(12000, false, false)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -142,7 +142,7 @@ func TestEvaluateWatches_AlreadyUnderTargetAlertsOnFirstPass(t *testing.T) {
 	f := newShopFixture(t)
 	c := New(f.s)
 	f.scrape("a", set("1", "MG Full Armor ZZ Gundam Ver.Ka", 9000, inStock))
-	if _, err := c.SaveWatch(context.Background(), kaWatch(12000, true, true)); err != nil {
+	if _, err := c.Save(context.Background(), kaWatch(12000, true, true)); err != nil {
 		t.Fatal(err)
 	}
 	p := pass(t, c)
@@ -158,7 +158,7 @@ func TestEvaluateWatches_RestockAndNewListing(t *testing.T) {
 	f := newShopFixture(t)
 	c := New(f.s)
 	f.scrape("a", set("1", "MG Full Armor ZZ Gundam Ver.Ka", 15000, oos))
-	if _, err := c.SaveWatch(context.Background(), kaWatch(0, true, true)); err != nil {
+	if _, err := c.Save(context.Background(), kaWatch(0, true, true)); err != nil {
 		t.Fatal(err)
 	}
 	if got := reasons(pass(t, c)); len(got) != 0 {
@@ -189,12 +189,12 @@ func TestEvaluateWatches_UncommittedAlertsRepeat(t *testing.T) {
 	f := newShopFixture(t)
 	c := New(f.s)
 	f.scrape("a", set("1", "MG Full Armor ZZ Gundam Ver.Ka", 9000, inStock))
-	if _, err := c.SaveWatch(context.Background(), kaWatch(12000, false, false)); err != nil {
+	if _, err := c.Save(context.Background(), kaWatch(12000, false, false)); err != nil {
 		t.Fatal(err)
 	}
 	// A failed send means Commit is never called: the alert must come back.
 	for i := 0; i < 2; i++ {
-		p, err := c.EvaluateWatches(context.Background())
+		p, err := c.Evaluate(context.Background())
 		if err != nil || len(p.Alerts) != 1 {
 			t.Fatalf("pass %d: %v alerts, err %v; want 1", i, len(p.Alerts), err)
 		}
@@ -208,7 +208,7 @@ func TestEvaluateWatches_DisabledAndEditedWatches(t *testing.T) {
 	f.scrape("a", set("1", "MG Full Armor ZZ Gundam Ver.Ka", 9000, inStock))
 	w := kaWatch(12000, false, false)
 	w.Enabled = false
-	saved, err := c.SaveWatch(ctx, w)
+	saved, err := c.Save(ctx, w)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +216,7 @@ func TestEvaluateWatches_DisabledAndEditedWatches(t *testing.T) {
 		t.Fatalf("disabled watch alerted: %v", got)
 	}
 	saved.Enabled = true
-	if _, err := c.SaveWatch(ctx, saved); err != nil {
+	if _, err := c.Save(ctx, saved); err != nil {
 		t.Fatal(err)
 	}
 	if got := reasons(pass(t, c)); len(got) != 1 {
@@ -224,14 +224,14 @@ func TestEvaluateWatches_DisabledAndEditedWatches(t *testing.T) {
 	}
 	// Renaming keeps the alert state; changing the target restarts it.
 	saved.Label = "renamed"
-	if _, err := c.SaveWatch(ctx, saved); err != nil {
+	if _, err := c.Save(ctx, saved); err != nil {
 		t.Fatal(err)
 	}
 	if got := reasons(pass(t, c)); len(got) != 0 {
 		t.Fatalf("after rename: %v, want none", got)
 	}
 	saved.MaxPriceCents = 13000
-	if _, err := c.SaveWatch(ctx, saved); err != nil {
+	if _, err := c.Save(ctx, saved); err != nil {
 		t.Fatal(err)
 	}
 	if got := reasons(pass(t, c)); len(got) != 1 {
@@ -243,7 +243,7 @@ func TestEvaluateWatches_ConvertsForeignPricesAndIgnoresUnpriced(t *testing.T) {
 	f := newShopFixture(t)
 	c := New(f.s) // no rates: USD can't be compared
 	f.scrape("a", scraper.ScrapedSet{ExternalID: "1", Name: "MG Full Armor ZZ Gundam Ver.Ka", Grade: "MG", PriceCents: 100, Currency: "USD", Availability: inStock})
-	if _, err := c.SaveWatch(context.Background(), kaWatch(12000, false, false)); err != nil {
+	if _, err := c.Save(context.Background(), kaWatch(12000, false, false)); err != nil {
 		t.Fatal(err)
 	}
 	if got := reasons(pass(t, c)); len(got) != 0 {
@@ -260,19 +260,19 @@ func TestSaveWatch_Validation(t *testing.T) {
 		"negative target":  func(w *Watch) { w.MaxPriceCents = -1 },
 		"absurd target":    func(w *Watch) { w.MaxPriceCents = maxPriceCents + 1 },
 		"no alert enabled": func(w *Watch) { w.MaxPriceCents, w.OnRestock, w.OnNew = 0, false, false },
-		"matches nothing":  func(w *Watch) { w.Spec = WatchSpec{Grade: "MG"} },
+		"matches nothing":  func(w *Watch) { w.Spec = Spec{Grade: "MG"} },
 	}
 	for name, mutate := range cases {
 		w := kaWatch(12000, true, false)
 		mutate(&w)
-		_, err := c.SaveWatch(ctx, w)
-		var bad *ErrInvalidWatch
+		_, err := c.Save(ctx, w)
+		var bad *InvalidError
 		if !errors.As(err, &bad) {
-			t.Errorf("%s: err = %v, want ErrInvalidWatch", name, err)
+			t.Errorf("%s: err = %v, want InvalidError", name, err)
 		}
 	}
-	if _, err := c.SaveWatch(ctx, Watch{ID: 999, Label: "x", Enabled: true, OnRestock: true, Spec: WatchSpec{Model: "x1"}}); !errors.Is(err, ErrWatchNotFound) {
-		t.Errorf("update of a missing watch: err = %v, want ErrWatchNotFound", err)
+	if _, err := c.Save(ctx, Watch{ID: 999, Label: "x", Enabled: true, OnRestock: true, Spec: Spec{Model: "x1"}}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("update of a missing watch: err = %v, want ErrNotFound", err)
 	}
 }
 
@@ -287,8 +287,8 @@ func TestPreviewWatch_PinsVariantsAndMissingVersions(t *testing.T) {
 	)
 	f.scrape("b", scraper.ScrapedSet{ExternalID: "x", Name: "Gundam FAZZ Pre-order", PriceCents: 12000, Availability: scraper.AvailabilityPreorder}) // no grade
 
-	spec := WatchSpec{Grade: "MG", Model: "fa010s", Tokens: []string{"armor", "full", "zz"}, Variants: []string{"verka", "ver9"}}
-	p, err := c.PreviewWatch(ctx, spec)
+	spec := Spec{Grade: "MG", Model: "fa010s", Tokens: []string{"armor", "full", "zz"}, Variants: []string{"verka", "ver9"}}
+	p, err := c.Preview(ctx, spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +306,7 @@ func TestPreviewWatch_PinsVariantsAndMissingVersions(t *testing.T) {
 	rows, _ := f.s.SearchSets(ctx, "b")
 	spec.Include = []int64{rows[0].SetID}
 	spec.Exclude = []int64{p.Matches[0].SetID}
-	p, err = c.PreviewWatch(ctx, spec)
+	p, err = c.Preview(ctx, spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,7 +331,7 @@ func TestSpecFromSet_PinsANameThatCannotMatchItself(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, _ := c.PreviewWatch(ctx, spec)
+	p, _ := c.Preview(ctx, spec)
 	if len(p.Matches) != 1 {
 		t.Fatalf("the starred listing must be in its own watch, got %+v", p.Matches)
 	}
@@ -344,7 +344,7 @@ func TestEvaluateWatches_AListingThatFlapsIsNotNewAgain(t *testing.T) {
 	f := newShopFixture(t)
 	c := New(f.s)
 	f.scrape("a", set("1", "MG Full Armor ZZ Gundam Ver.Ka", 15000, inStock))
-	if _, err := c.SaveWatch(context.Background(), kaWatch(0, false, true)); err != nil {
+	if _, err := c.Save(context.Background(), kaWatch(0, false, true)); err != nil {
 		t.Fatal(err)
 	}
 	pass(t, c)
@@ -360,7 +360,7 @@ func TestEvaluateWatches_RestockUnderTargetIsOneAlertReason(t *testing.T) {
 	f := newShopFixture(t)
 	c := New(f.s)
 	f.scrape("a", set("1", "MG Full Armor ZZ Gundam Ver.Ka", 9000, oos))
-	if _, err := c.SaveWatch(context.Background(), kaWatch(12000, true, false)); err != nil {
+	if _, err := c.Save(context.Background(), kaWatch(12000, true, false)); err != nil {
 		t.Fatal(err)
 	}
 	pass(t, c)
@@ -374,10 +374,10 @@ func TestSaveWatch_LongMultibyteWordIsRejectedCleanly(t *testing.T) {
 	c := New(newShopFixture(t).s)
 	w := kaWatch(12000, true, false)
 	w.Spec.Tokens = []string{repeat("ν", 40)} // 80 bytes
-	_, err := c.SaveWatch(context.Background(), w)
-	var bad *ErrInvalidWatch
+	_, err := c.Save(context.Background(), w)
+	var bad *InvalidError
 	if !errors.As(err, &bad) || !utf8.ValidString(err.Error()) {
-		t.Fatalf("err = %v, want a valid-UTF-8 ErrInvalidWatch", err)
+		t.Fatalf("err = %v, want a valid-UTF-8 InvalidError", err)
 	}
 }
 

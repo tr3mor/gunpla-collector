@@ -12,16 +12,17 @@ import (
 
 	"gunpla-collector/internal/catalog"
 	"gunpla-collector/internal/store"
+	"gunpla-collector/internal/watchlist"
 )
 
-// fakeCatalog returns canned results and records the filter it was asked for.
+// fakeCatalog is both the Catalog and the Watchlist; it returns canned results and records the filter it was asked for.
 type fakeCatalog struct {
 	rows     []store.SetSearchRow
 	products []catalog.Product
 	err      error
 	lastSeen catalog.Filter
-	statuses []catalog.WatchStatus
-	saved    []catalog.Watch
+	statuses []watchlist.Status
+	saved    []watchlist.Watch
 	review   []catalog.ReviewRow
 	linked   [][2]int64
 }
@@ -36,19 +37,19 @@ func (f *fakeCatalog) Products(ctx context.Context, flt catalog.Filter) ([]catal
 	return f.products, f.err
 }
 
-func (f *fakeCatalog) SpecFromSet(ctx context.Context, setID int64) (catalog.WatchSpec, string, error) {
-	return catalog.WatchSpec{}, "", f.err
+func (f *fakeCatalog) SpecFromSet(ctx context.Context, setID int64) (watchlist.Spec, string, error) {
+	return watchlist.Spec{}, "", f.err
 }
 
-func (f *fakeCatalog) PreviewWatch(ctx context.Context, spec catalog.WatchSpec) (catalog.WatchPreview, error) {
-	return catalog.WatchPreview{Spec: spec}, f.err
+func (f *fakeCatalog) Preview(ctx context.Context, spec watchlist.Spec) (watchlist.Preview, error) {
+	return watchlist.Preview{Spec: spec}, f.err
 }
 
-func (f *fakeCatalog) WatchStatuses(ctx context.Context) ([]catalog.WatchStatus, error) {
+func (f *fakeCatalog) Statuses(ctx context.Context) ([]watchlist.Status, error) {
 	return f.statuses, f.err
 }
 
-func (f *fakeCatalog) SaveWatch(ctx context.Context, w catalog.Watch) (catalog.Watch, error) {
+func (f *fakeCatalog) Save(ctx context.Context, w watchlist.Watch) (watchlist.Watch, error) {
 	f.saved = append(f.saved, w)
 	if w.ID == 0 {
 		w.ID = 7
@@ -56,7 +57,7 @@ func (f *fakeCatalog) SaveWatch(ctx context.Context, w catalog.Watch) (catalog.W
 	return w, f.err
 }
 
-func (f *fakeCatalog) DeleteWatch(ctx context.Context, id int64) error { return f.err }
+func (f *fakeCatalog) Delete(ctx context.Context, id int64) error { return f.err }
 
 func (f *fakeCatalog) NearMisses(ctx context.Context, includeDismissed bool) ([]catalog.ReviewRow, error) {
 	return f.review, f.err
@@ -86,7 +87,7 @@ func newTestServer() (*Server, *fakeCatalog) {
 		{ID: 2, Slug: "shop-b", Name: "Shop B"},
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewServer(fc, shops, logger), fc
+	return NewServer(fc, fc, shops, logger), fc
 }
 
 func get(t *testing.T, s *Server, target string) *httptest.ResponseRecorder {

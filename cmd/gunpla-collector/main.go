@@ -24,6 +24,7 @@ import (
 	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
 	"gunpla-collector/internal/telegram"
+	"gunpla-collector/internal/watchlist"
 	"gunpla-collector/internal/web"
 )
 
@@ -186,7 +187,7 @@ func run(args []string) error {
 		}
 		// Watches span shops, so they are checked once after every shop's
 		// report rather than per shop.
-		if err := reporter.RunWatches(ctx, catalog.New(db), tg, logger); err != nil {
+		if err := reporter.RunWatches(ctx, watchlist.New(db), tg, logger); err != nil {
 			logger.Error("watch alerts failed", "error", err)
 			if firstErr == nil {
 				firstErr = err
@@ -306,7 +307,7 @@ func addrFlag(flagVal, cfgDefault string) string {
 func serve(ctx context.Context, db *store.Store, logger *slog.Logger, addr, writeToken string) error {
 	srv := &http.Server{
 		Addr:    addr,
-		Handler: web.NewServer(catalog.New(db), db, logger, web.WithWriteToken(writeToken)).Handler(),
+		Handler: web.NewServer(catalog.New(db), watchlist.New(db), db, logger, web.WithWriteToken(writeToken)).Handler(),
 	}
 
 	errCh := make(chan error, 1)
