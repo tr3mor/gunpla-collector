@@ -127,6 +127,7 @@ func (c *Catalog) Products(ctx context.Context, f Filter) ([]Product, error) {
 	out := make([]Product, 0, len(order))
 	for _, key := range order {
 		p := byKey[key]
+		sortByPrice(p.Listings)
 		markCheapest(p.Listings)
 		out = append(out, *p)
 	}
@@ -137,6 +138,33 @@ func (c *Catalog) Products(ctx context.Context, f Filter) ([]Product, error) {
 		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
 	})
 	return out, nil
+}
+
+// sortByPrice orders a kit's listings cheapest first, in EUR. Listings that
+// can be bought come first; then buyable ones with no EUR value (compared in
+// their own currency, so only a rough order); out-of-stock ones last. Ties
+// keep the order the listings came in.
+func sortByPrice(ls []Listing) {
+	rank := func(l Listing) (int, int) {
+		if cents, ok := buyableEUR(l.SetSearchRow); ok {
+			return 0, cents
+		}
+		if l.Availability == scraper.AvailabilityOutOfStock {
+			if l.HasEUR {
+				return 2, l.EURCents
+			}
+			return 2, l.CurrentCents
+		}
+		return 1, l.CurrentCents
+	}
+	sort.SliceStable(ls, func(i, j int) bool {
+		ri, ci := rank(ls[i])
+		rj, cj := rank(ls[j])
+		if ri != rj {
+			return ri < rj
+		}
+		return ci < cj
+	})
 }
 
 // markCheapest flags the cheapest in-stock (or pre-order) listing, but only

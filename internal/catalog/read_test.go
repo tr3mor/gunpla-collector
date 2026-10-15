@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"gunpla-collector/internal/scraper"
@@ -114,6 +115,15 @@ func TestProducts_GroupsListingsAndMarksCheapest(t *testing.T) {
 	}
 	if got[0].ID != 7 || len(got[0].Listings) != 3 {
 		t.Fatalf("multi-shop product should sort first with 3 listings: %+v", got[0])
+	}
+	// Listings run cheapest first; the out-of-stock €70 one goes last even
+	// though it is the lowest price.
+	var order []string
+	for _, l := range got[0].Listings {
+		order = append(order, l.ShopSlug)
+	}
+	if want := []string{"shop-b", "shop-a", "shop-c"}; !slices.Equal(order, want) {
+		t.Errorf("listing order = %v, want %v", order, want)
 	}
 	for _, l := range got[0].Listings {
 		// The out-of-stock €70 listing is cheaper but can't be bought.

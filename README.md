@@ -5,6 +5,15 @@ sends a daily Telegram summary of what's new, removed, or changed price,
 and serves a small web UI for searching the current catalog, watching
 kits for a target price or restock, and reviewing near-miss matches.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.jpg">
+    <img src="docs/screenshot-light.jpg" alt="The search page: the same kit grouped across shops, cheapest offer first, with a grade-coloured stripe and an arrow after each price showing whether it is the lowest recorded" width="900">
+  </picture>
+  <br>
+  <sub>Search, grouped by kit and sorted by price (sample data; light and dark themes follow your system).</sub>
+</p>
+
 Supported shops:
 - [GeeksHeaven](https://www.geeksheaven.nl/gundam-model-kits/)
 - [Gundam Store](https://gundam-store.com/collections/mg-master-grade)
