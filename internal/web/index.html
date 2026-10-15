@@ -4,180 +4,303 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gunpla Collector</title>
+<script>
+  try { var t = localStorage.getItem('gunpla.theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) { /* storage unavailable: follow the system */ }
+</script>
 <style>
   :root {
     color-scheme: light dark;
-    --bg: #f7f7f8;
+    --bg: #eef1f0;
     --panel: #ffffff;
-    --text: #1a1a1a;
-    --muted: #6b6b6b;
-    --border: #e2e2e4;
-    --accent: #2f6fed;
-    --danger: #c23c3c;
-    --good: #1a7f37;
-    --gold: #a86f00;
+    --text: #142033;
+    --muted: #5d6b7a;
+    --border: #d5dcdf;
+    --grid: rgba(20, 32, 51, .06);
+    --accent: #2456b0;
+    --danger: #c8321f;
+    --good: #12794a;
+    --gold: #8a5d00;
+    --beam: #f2b705;
+    --shadow: 0 1px 2px rgba(20, 32, 51, .06), 0 8px 24px rgba(20, 32, 51, .08);
+    --g-mg: #2456b0;
+    --g-hg: #12794a;
+    --g-rg: #c8321f;
+    --g-pg: #b58900;
+    --g-none: #8b97a3;
   }
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"] { color-scheme: dark; }
   @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #16171a;
-      --panel: #1f2024;
-      --text: #eaeaea;
-      --muted: #9a9a9e;
-      --border: #313236;
-      --accent: #6d9bff;
-      --danger: #ff6b6b;
-      --good: #4fd17a;
-      --gold: #ffd24a;
+    :root:not([data-theme="light"]) {
+      --bg: #0d1220;
+      --panel: #151c2e;
+      --text: #e7ecf6;
+      --muted: #92a0b8;
+      --border: #26324a;
+      --grid: rgba(150, 180, 255, .05);
+      --accent: #7aa7ff;
+      --danger: #ff7a6b;
+      --good: #5fd68f;
+      --gold: #f2c14e;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .4);
+      --g-mg: #5b8ee6;
+      --g-hg: #3fb577;
+      --g-rg: #f06a58;
+      --g-pg: #e0b23a;
+      --g-none: #6b7890;
     }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d1220;
+    --panel: #151c2e;
+    --text: #e7ecf6;
+    --muted: #92a0b8;
+    --border: #26324a;
+    --grid: rgba(150, 180, 255, .05);
+    --accent: #7aa7ff;
+    --danger: #ff7a6b;
+    --good: #5fd68f;
+    --gold: #f2c14e;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .4);
+    --g-mg: #5b8ee6;
+    --g-hg: #3fb577;
+    --g-rg: #f06a58;
+    --g-pg: #e0b23a;
+    --g-none: #6b7890;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
     background: var(--bg);
     color: var(--text);
-    font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-variant-numeric: tabular-nums;
   }
-  header {
-    padding: 20px 16px 8px;
-    max-width: 1000px;
-    margin: 0 auto;
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* Header sits on a faint cutting-mat grid. */
+  .masthead {
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 24px 24px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
   }
-  h1 { font-size: 20px; margin: 0 0 12px; }
-  .controls {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    max-width: 1000px;
-    margin: 0 auto;
-    padding: 0 16px 16px;
+  header { padding: 22px 16px 0; max-width: 1000px; margin: 0 auto; }
+  .brand { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; }
+  .brand svg { flex: none; }
+  .brand .spacer { flex: 1; }
+  .theme { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); padding: 2px; }
+  .theme button { border: none; background: none; color: var(--muted); font: inherit; font-size: 12px; padding: 3px 11px; border-radius: 999px; cursor: pointer; }
+  .theme button:hover { color: var(--text); }
+  .theme button[aria-pressed="true"] { background: var(--text); color: var(--panel); font-weight: 600; }
+  h1 { font-size: 24px; font-weight: 800; font-style: italic; letter-spacing: -.02em; margin: 0; }
+
+  .tabs { display: flex; gap: 2px; margin: 0; }
+  .tabs button {
+    background: none; border: none; border-bottom: 3px solid transparent;
+    padding: 8px 14px 9px; margin-bottom: -1px;
+    color: var(--muted); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer;
   }
+  .tabs button:hover { color: var(--text); }
+  .tabs button.active { color: var(--text); border-bottom-color: var(--danger); font-weight: 700; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; max-width: 1000px; margin: 0 auto; padding: 0 16px 16px; }
   .controls input, .controls select {
-    flex: 1 1 180px;
-    padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--panel);
-    color: var(--text);
-    font-size: 14px;
+    flex: 1 1 160px; min-height: 38px; padding: 7px 11px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--panel); color: var(--text); font: inherit; font-size: 14px;
   }
+  .controls input[type=search]#q { flex: 1 1 100%; min-height: 46px; font-size: 16px; padding-left: 14px; }
   .controls input:invalid { border-color: var(--danger); }
   .controls label.checkbox {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--muted);
-    font-size: 14px;
-    white-space: nowrap;
+    flex: 0 0 auto; display: flex; align-items: center; gap: 7px;
+    min-height: 38px; padding: 0 12px; border: 1px solid var(--border); border-radius: 999px;
+    background: var(--panel); color: var(--muted); font-size: 13px; white-space: nowrap; cursor: pointer;
   }
-  .controls label.checkbox input { flex: none; width: auto; }
-  main { max-width: 1000px; margin: 0 auto; padding: 0 16px 40px; }
+  .controls label.checkbox:has(input:checked) { color: var(--text); border-color: var(--accent); }
+  .controls label.checkbox input { flex: none; width: auto; min-height: 0; padding: 0; accent-color: var(--accent); }
+
+  main { max-width: 1000px; margin: 0 auto; padding: 0 16px 48px; }
   #status { color: var(--muted); font-size: 13px; margin-bottom: 10px; min-height: 1.2em; }
-  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
-  th { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+
+  /* Results: one panel, rows tagged with a grade-colored band like a kit box. */
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); }
+  th, td { text-align: left; padding: 6px 14px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: top; }
+  th { font-size: 12px; font-weight: 600; color: var(--muted); background: color-mix(in srgb, var(--bg) 60%, var(--panel)); vertical-align: middle; padding-top: 8px; padding-bottom: 8px; }
+  th.num, td.num { text-align: right; }
+  th, td.num, td[data-label="Shop"] { white-space: nowrap; }
+  th.num, td.num { width: 1%; }
   tr:last-child td { border-bottom: none; }
-  a.name { color: var(--text); text-decoration: none; font-weight: 500; }
+  tr { --g: var(--g-none); }
+  tr[data-grade="MG"] { --g: var(--g-mg); }
+  tr[data-grade="HG"] { --g: var(--g-hg); }
+  tr[data-grade="RG"] { --g: var(--g-rg); }
+  tr[data-grade="PG"] { --g: var(--g-pg); }
+  tbody tr td:first-child { box-shadow: inset 4px 0 0 var(--g); padding-left: 18px; }
+  tbody tr:hover td { background: color-mix(in srgb, var(--accent) 5%, var(--panel)); }
+
+  .grade { display: inline-block; min-width: 24px; text-align: center; padding: 0 6px; margin-right: 8px; border-radius: 4px; font-size: 11px; font-weight: 700; line-height: 18px; color: var(--text); background: color-mix(in srgb, var(--g) 18%, var(--panel)); border: 1px solid color-mix(in srgb, var(--g) 55%, var(--panel)); vertical-align: 1px; }
+  a.name { color: var(--text); text-decoration: none; font-weight: 600; }
   a.name:hover { color: var(--accent); text-decoration: underline; }
   .shop { color: var(--muted); font-size: 12px; }
-  .price-current { font-variant-numeric: tabular-nums; }
-  .price-lowest { color: var(--muted); font-variant-numeric: tabular-nums; }
-  .price-current.at-low { color: var(--good); font-weight: 600; }
-  tr.group-head td { background: color-mix(in srgb, var(--accent) 8%, var(--panel)); font-weight: 600; border-bottom: 1px solid var(--border); }
+  .price-current { font-size: 15px; font-weight: 700; line-height: 1.25; }
+  .price-current.at-low { color: var(--good); }
+  .price-lowest { color: var(--muted); }
+  /* Fixed-width slot after every price, so the arrow never shifts the column. */
+  .trend { display: inline-block; width: 18px; text-align: right; font-size: 11px; cursor: help; vertical-align: 1px; }
+  .trend.down { color: var(--good); }
+  .trend.up { color: var(--danger); }
+  th.num:nth-child(3) { padding-right: 32px; }
+  #tip { position: fixed; z-index: 20; max-width: 260px; padding: 6px 10px; border-radius: 8px; background: var(--text); color: var(--panel); font-size: 12.5px; line-height: 1.35; box-shadow: var(--shadow); pointer-events: none; opacity: 0; transition: opacity .1s; }
+  #tip.show { opacity: 1; }
+  tr.group-head td { background: color-mix(in srgb, var(--g) 9%, var(--panel)); font-weight: 700; }
+  tr.group-head:hover td { background: color-mix(in srgb, var(--g) 9%, var(--panel)); }
   tr.group-head .count { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 6px; }
-  tr.group-row td:first-child { padding-left: 28px; }
+  tr.group-row td:first-child { padding-left: 34px; }
   tr.group-row .listing-name { color: var(--muted); font-size: 13px; }
-  tr.group-head .best { float: right; color: var(--gold); font-size: 13px; }
-  .cheapest { color: var(--gold); font-size: 11px; font-weight: 700; margin-left: 6px; text-transform: uppercase; }
+  tr.group-head .best { float: right; color: var(--text); font-size: 13px; font-weight: 600; }
+  tr.group-head .best b { color: var(--good); }
   .method { color: var(--muted); font-size: 11px; margin-left: 6px; }
-  .out-of-stock { color: var(--danger); font-size: 12px; }
+  .out-of-stock { color: var(--danger); font-size: 12px; font-weight: 500; }
 
-  .tabs { display: flex; gap: 4px; margin: 0 0 12px; }
-  .tabs button { background: none; border: 1px solid transparent; border-radius: 6px; padding: 6px 12px; color: var(--muted); font-size: 14px; cursor: pointer; }
-  .tabs button.active { color: var(--text); border-color: var(--border); background: var(--panel); font-weight: 600; }
-  .poc { background: color-mix(in srgb, var(--gold) 12%, var(--panel)); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 13px; color: var(--muted); margin-bottom: 12px; }
-  button.star { background: none; border: none; cursor: pointer; font-size: 16px; color: var(--muted); padding: 0 6px 0 0; line-height: 1; }
+  .poc { background: color-mix(in srgb, var(--beam) 14%, var(--panel)); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+  button.star { background: none; border: none; cursor: pointer; font-size: 16px; color: var(--muted); padding: 0 6px 0 0; line-height: 1; vertical-align: -1px; }
   button.star:hover { color: var(--gold); }
-  .btn { padding: 7px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 14px; cursor: pointer; }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.star.on { color: var(--beam); }
+  .btn { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font: inherit; font-size: 14px; cursor: pointer; }
+  .btn:hover { border-color: var(--muted); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.primary { color: #08121f; } }
+  :root[data-theme="dark"] .btn.primary { color: #08121f; }
   .btn.danger { color: var(--danger); }
-  .btn.small { padding: 3px 9px; font-size: 12px; }
-  .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 24px 12px; z-index: 10; }
+  .btn.small { padding: 3px 10px; font-size: 12px; }
+  .btn:disabled { opacity: .5; cursor: default; }
+
+  .modal-back { position: fixed; inset: 0; background: rgba(3, 6, 16, .6); display: none; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 24px 12px; z-index: 10; }
   .modal-back.open { display: flex; }
-  .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; width: 100%; max-width: 720px; padding: 18px 20px; }
-  .modal h2 { font-size: 17px; margin: 0 0 12px; }
-  .modal h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin: 16px 0 6px; }
-  .modal input[type=text], .modal input[type=number] { padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 14px; }
-  .field-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 6px; }
+  .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); width: 100%; max-width: 720px; padding: 20px 22px; }
+  .modal h2 { font-size: 18px; margin: 0 0 14px; }
+  .modal h3 { font-size: 13px; font-weight: 700; color: var(--muted); margin: 18px 0 6px; }
+  .modal input[type=text], .modal input[type=number], .modal input[type=search], .modal input[type=password] { padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; font-size: 14px; }
+  .field-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 8px; }
   .field-row label { display: flex; align-items: center; gap: 6px; font-size: 14px; }
-  .variant { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 5px; font-size: 14px; }
-  .variant.sel { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--panel)); }
-  .variant .vlabel { flex: 1; font-weight: 500; }
+  .variant { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 5px; font-size: 14px; cursor: pointer; }
+  .variant.sel { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
+  .variant .vlabel { flex: 1; font-weight: 600; }
   .variant .vmeta { color: var(--muted); font-size: 12px; }
-  .chip { display: inline-block; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px; font-size: 12px; margin: 0 4px 4px 0; }
-  .match { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .chip { display: inline-block; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; padding: 1px 9px; font-size: 12px; margin: 0 4px 4px 0; }
+  .match { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
   .match:last-child { border-bottom: none; }
   .match.excluded { opacity: .45; text-decoration: line-through; }
   .match .mname { flex: 1; min-width: 0; }
-  .match .mname a { color: var(--text); text-decoration: none; }
+  .match .mname a { color: var(--text); text-decoration: none; font-weight: 500; }
   .match .mname a:hover { text-decoration: underline; }
-  .match .mprice { font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .summary { padding: 10px 12px; border-radius: 6px; background: var(--bg); border: 1px solid var(--border); font-size: 14px; margin-top: 12px; }
+  .match .mprice { white-space: nowrap; font-weight: 600; }
+  .summary { padding: 11px 14px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border); font-size: 14px; margin-top: 14px; }
   .summary.hit { border-color: var(--good); color: var(--good); font-weight: 600; }
-  .modal-actions { display: flex; gap: 8px; margin-top: 16px; }
+  .summary.warn { border-color: var(--danger); color: var(--danger); }
+  .modal-actions { display: flex; gap: 8px; margin-top: 18px; }
   .modal-actions .spacer { flex: 1; }
-  .watch-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
-  .watch-card .wtitle { font-weight: 600; }
-  .watch-card .wsub { color: var(--muted); font-size: 12px; margin: 2px 0 6px; }
-  .badge { font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 2px 7px; border-radius: 10px; margin-left: 8px; border: 1px solid var(--border); color: var(--muted); }
-  .badge.hit { color: var(--good); border-color: var(--good); }
-  .badge.stock { color: var(--accent); border-color: var(--accent); }
-  .empty { color: var(--muted); padding: 20px 0; }
 
-  .note { background: color-mix(in srgb, var(--accent) 7%, var(--panel)); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 13px; color: var(--muted); margin-bottom: 12px; }
-  .note code, .modal code { font-size: 12px; }
-  button.star.on { color: var(--gold); }
+  .watch-card, .rev-card { --g: var(--g-none); background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--g); border-radius: 10px; padding: 12px 16px; margin-bottom: 8px; box-shadow: var(--shadow); }
+  .rev-card[data-grade="MG"] { --g: var(--g-mg); }
+  .rev-card[data-grade="HG"] { --g: var(--g-hg); }
+  .rev-card[data-grade="RG"] { --g: var(--g-rg); }
+  .rev-card[data-grade="PG"] { --g: var(--g-pg); }
+  /* A watch's stripe shows its state, not its grade. */
+  .watch-card[data-state="hit"] { --g: var(--good); }
+  .watch-card[data-state="miss"] { --g: var(--danger); }
+  .watch-card[data-state="paused"] { --g: var(--g-none); }
+  .watch-card { display: grid; grid-template-columns: 1fr auto; gap: 4px 20px; align-items: start; }
+  .watch-card .grade { --g: var(--g-none); background: var(--bg); border-color: var(--border); }
+  .watch-card .wtitle { font-weight: 700; font-size: 15px; }
+  .watch-card .wsub { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+  .watch-card .wside { text-align: right; min-width: 150px; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+  .watch-card .wprice { font-size: 20px; font-weight: 700; line-height: 1.2; }
+  .watch-card .wprice.hit { color: var(--good); }
+  .watch-card .wwhere { font-size: 12.5px; color: var(--muted); }
+  .watch-card .wgap { font-size: 12.5px; color: var(--muted); }
+  .watch-card .wgap.hit { color: var(--good); font-weight: 600; }
+  .watch-card .btn { margin-top: 8px; }
+  .watch-card .warn-line { grid-column: 1 / -1; }
   .watch-card.paused { opacity: .6; }
   .watch-card a { color: var(--accent); }
-  .warn-line { color: var(--danger); font-size: 13px; margin: 4px 0; }
+  .badge { font-size: 12px; font-weight: 600; padding: 1px 9px; border-radius: 999px; margin-left: 8px; border: 1px solid var(--border); color: var(--muted); }
+  .badge.hit { color: var(--good); border-color: var(--good); }
+  .badge.stock { color: var(--accent); border-color: var(--accent); }
   .badge.warn { color: var(--danger); border-color: var(--danger); }
-  .summary.warn { border-color: var(--danger); color: var(--danger); }
+  .empty { color: var(--muted); padding: 28px 0; text-align: center; }
+
+  .note { background: color-mix(in srgb, var(--accent) 7%, var(--panel)); border: 1px solid var(--border); border-radius: 8px; padding: 9px 13px; font-size: 13px; color: var(--muted); margin-bottom: 14px; max-width: 78ch; }
+  .note code, .modal code { font-size: 12px; }
+  .warn-line { color: var(--danger); font-size: 13px; margin: 4px 0; }
   .chip a { text-decoration: none; color: var(--muted); }
-  .chip.ver { border-color: var(--gold); }
+  .chip.ver { border-color: var(--beam); }
   .chip.diff { background: color-mix(in srgb, var(--danger) 14%, var(--panel)); border-color: var(--danger); }
-  .rev-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin-bottom: 10px; }
   .rev-card.dismissed { opacity: .55; }
-  .rev-head { margin-bottom: 8px; font-size: 13px; }
+  .rev-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 10px; font-size: 13px; }
+  .rev-head .badge { margin-left: 0; }
+  .rev-head .score { margin-left: auto; color: var(--muted); font-size: 12px; }
   .rev-reason { color: var(--text); }
-  .rev-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .rev-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+  .rev-sides .side { padding: 0 16px; }
+  .rev-sides .side:first-child { padding-left: 0; border-right: 1px solid var(--border); }
+  .rev-sides .side:last-child { padding-right: 0; }
+  .side-price { font-weight: 700; }
   .rev-sides .side { min-width: 0; overflow-wrap: anywhere; }
   .rev-sides a.name { display: block; margin: 2px 0; }
   .keyline { font-size: 12px; color: var(--muted); margin-top: 4px; }
-  .rev-actions { margin-top: 10px; }
-  .btn:disabled { opacity: .5; cursor: default; }
-  @media (max-width: 640px) { .rev-sides { grid-template-columns: 1fr; } }
+  .rev-actions { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 8px; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .btn, .tabs button, tbody tr td { transition: background-color .12s, border-color .12s, color .12s; }
+  }
   @media (max-width: 640px) {
+    .rev-sides { grid-template-columns: 1fr; gap: 12px; }
+    .rev-sides .side, .rev-sides .side:first-child, .rev-sides .side:last-child { padding: 0; border: none; }
+    .watch-card { grid-template-columns: 1fr; }
+    .watch-card .wside { align-items: flex-start; text-align: left; }
+    h1 { font-size: 20px; }
     table, thead, tbody, th, td, tr { display: block; }
     thead { display: none; }
-    tr { border-bottom: 1px solid var(--border); padding: 10px 12px; }
-    td { border: none; padding: 2px 0; }
+    tr { border-bottom: 1px solid var(--border); padding: 11px 14px 11px 18px; border-left: 4px solid var(--g); }
+    tr:last-child { border-bottom: 1px solid var(--border); }
+    td, tbody tr td:first-child { border: none; padding: 2px 0; box-shadow: none; }
+    td.num { text-align: left; }
+    tr.group-row { padding-left: 28px; }
+    tr.group-row td:first-child { padding-left: 0; }
+    tr.group-head .best { float: none; display: block; margin-top: 2px; }
     td::before { content: attr(data-label); color: var(--muted); font-size: 11px; display: block; }
+    td[data-label="Set"]::before { display: none; }
   }
 </style>
 </head>
 <body>
+<div class="masthead">
 <header>
-  <h1>Gunpla Collector</h1>
-  <div class="tabs">
+  <div class="brand">
+    <svg width="30" height="24" viewBox="0 0 30 24" aria-hidden="true"><path d="M2 2 L12 20 L15 14 L7 2 Z" fill="#f2b705"/><path d="M28 2 L18 20 L15 14 L23 2 Z" fill="#f2b705"/><path d="M12 20 L15 24 L18 20 L15 14 Z" fill="#c8321f"/></svg>
+    <h1>Gunpla Collector</h1>
+    <span class="spacer"></span>
+    <div class="theme" role="group" aria-label="Colour theme">
+      <button type="button" data-theme-choice="system">System</button>
+      <button type="button" data-theme-choice="light">Light</button>
+      <button type="button" data-theme-choice="dark">Dark</button>
+    </div>
+  </div>
+  <nav class="tabs" aria-label="Sections">
     <button id="tabSearch" class="active">Search</button>
     <button id="tabWatches">Watches <span id="watchCount"></span></button>
     <button id="tabReview">Near misses</button>
-  </div>
+  </nav>
 </header>
+</div>
 <div id="searchView">
 <div class="controls">
-  <input id="q" type="search" placeholder="Search by name…" autocomplete="off">
-  <input id="regexp" type="text" placeholder="Regexp filter (optional)" autocomplete="off">
+  <input id="q" type="search" placeholder="Search kits by name, e.g. Barbatos or RX-78-2" aria-label="Search kits" autocomplete="off">
+  <input id="regexp" type="text" placeholder="Regexp filter (optional)" aria-label="Regexp filter" autocomplete="off">
   <select id="shop"><option value="">All shops</option></select>
   <select id="grade">
     <option value="">All grades</option>
@@ -194,7 +317,7 @@
   <div id="status"></div>
   <table>
     <thead>
-      <tr><th>Set</th><th>Shop</th><th>Current price</th><th>Lowest recorded</th></tr>
+      <tr><th>Kit</th><th>Shop</th><th class="num">Price now</th><th class="num">Lowest recorded</th></tr>
     </thead>
     <tbody id="rows"></tbody>
   </table>
@@ -202,7 +325,7 @@
 </div>
 <div id="watchesView" style="display:none">
   <main>
-    <div class="note">Alerts are sent to Telegram by the daily <code>report</code>, after the shops are collected. Watches follow listings directly, so they work even where shops aren't grouped.</div>
+    <div class="note">Alerts are sent to Telegram by the daily <code>report</code>, after the shops are collected. Watches follow listings directly, so they work even where shops aren't grouped.<br>The stripe on the left shows each watch: <b style="color:var(--good)">green</b> when its target is hit, <b style="color:var(--danger)">red</b> when it isn't, grey when paused.</div>
     <div id="watchList"></div>
   </main>
 </div>
@@ -224,6 +347,7 @@
   <p class="shop">This server asks for a token before it saves changes (<code>GUNPLA_UI_TOKEN</code>). It is remembered in this browser.</p>
   <input type="password" id="tokenInput" style="width:100%" autocomplete="off">
   <div class="modal-actions"><span class="spacer"></span><button class="btn" id="tokenCancel">Cancel</button><button class="btn primary" id="tokenOk">Continue</button></div></div></div>
+<div id="tip" role="tooltip"></div>
 <div id="modalBack" class="modal-back"><div class="modal" id="modal"></div></div>
 <script>
 (function () {
@@ -262,16 +386,34 @@
     }).catch(function () { /* shop list is a convenience, search still works without it */ });
   }
 
-  function rowHTML(row, cls, extra) {
+  var GRADES = { MG: 1, HG: 1, RG: 1, PG: 1 };
+  function gradeAttr(g) { return GRADES[g] ? ' data-grade="' + g + '"' : ''; }
+  function gradeChip(g) { return g ? '<span class="grade">' + escapeHTML(g) + '</span>' : ''; }
+
+  // Arrow after the price: green down when it is the lowest recorded, red up when it is above it.
+  function trendHTML(row) {
+    var cur = row.current_price_cents, low = row.lowest_price_cents;
+    var tip, cls, glyph;
+    if (cur <= low || low <= 0) {
+      cls = 'down'; glyph = '&#9660;'; tip = 'At its lowest price so far';
+    } else {
+      var pct = Math.round((cur / low - 1) * 100);
+      cls = 'up'; glyph = '&#9650;';
+      tip = pct + '% above its lowest price so far (' + formatPrice(low, row.currency) + ')';
+    }
+    return '<span class="trend ' + cls + '" data-tip="' + tip + '" aria-label="' + tip + '" role="img" tabindex="0">' + glyph + '</span>';
+  }
+
+  function rowHTML(row, cls) {
     var atLow = row.current_price_cents <= row.lowest_price_cents;
     var outOfStock = row.availability === 'out_of_stock';
     var preorder = row.availability === 'preorder';
-    return '<tr' + (cls ? ' class="' + cls + '"' : '') + '>' +
-      '<td data-label="Set"><button class="star" data-set="' + row.set_id + '" title="Watch this kit">&#9734;</button><a class="name" href="' + row.url.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener">' + escapeHTML(row.name) + (row.grade ? ' <span class="shop">(' + escapeHTML(row.grade) + ')</span>' : '') + '</a>' +
+    return '<tr' + (cls ? ' class="' + cls + '"' : '') + gradeAttr(row.grade) + '>' +
+      '<td data-label="Set"><button class="star" data-set="' + row.set_id + '" title="Watch this kit" aria-label="Watch this kit">&#9734;</button>' + gradeChip(row.grade) + '<a class="name" href="' + row.url.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener">' + escapeHTML(row.name) + '</a>' +
         (outOfStock ? '<br><span class="out-of-stock">Out of stock</span>' : '') + (preorder ? '<br><span class="shop">Pre-order</span>' : '') + '</td>' +
       '<td data-label="Shop">' + escapeHTML(row.shop_name) + '</td>' +
-      '<td data-label="Current price"><span class="price-current' + (atLow ? ' at-low' : '') + '">' + formatPrice(row.current_price_cents, row.currency) + '</span>' + (extra || '') + '</td>' +
-      '<td data-label="Lowest recorded"><span class="price-lowest">' + formatPrice(row.lowest_price_cents, row.currency) + '</span></td>' +
+      '<td class="num" data-label="Price now"><span class="price-current' + (atLow ? ' at-low' : '') + '">' + formatPrice(row.current_price_cents, row.currency) + '</span>' + trendHTML(row) + '</td>' +
+      '<td class="num" data-label="Lowest recorded"><span class="price-lowest">' + formatPrice(row.lowest_price_cents, row.currency) + '</span></td>' +
       '</tr>';
   }
 
@@ -279,27 +421,25 @@
   function bestHTML(p) {
     var best = p.listings.filter(function (l) { return l.cheapest; });
     if (best.length === 0) return '';
-    return '<span class="best">from ' + formatPrice(best[0].current_price_cents, best[0].currency) + ' at ' +
+    return '<span class="best">from <b>' + formatPrice(best[0].current_price_cents, best[0].currency) + '</b> at ' +
       best.map(function (l) { return escapeHTML(l.shop_name); }).join(' / ') + '</span>';
   }
 
   function renderProducts(products) {
     if (products.length === 0) {
       rowsEl.innerHTML = '';
-      statusEl.textContent = 'No sets match.';
+      statusEl.textContent = 'No kits match. Clear a filter, or untick "Hide out of stock".';
       return;
     }
     var multi = products.filter(function (p) { return p.listings.length > 1; }).length;
     statusEl.textContent = products.length + ' kit' + (products.length === 1 ? '' : 's') + ', ' + multi + ' sold by more than one listing';
     rowsEl.innerHTML = products.map(function (p) {
       if (p.listings.length === 1) return rowHTML(p.listings[0], '');
-      var head = '<tr class="group-head"><td colspan="4">' + escapeHTML(p.name) +
-        (p.grade ? ' <span class="shop">(' + escapeHTML(p.grade) + ')</span>' : '') +
+      var head = '<tr class="group-head"' + gradeAttr(p.grade) + '><td colspan="4">' + gradeChip(p.grade) + escapeHTML(p.name) +
         '<span class="count">' + p.listings.length + ' listings</span>' + bestHTML(p) + '</td></tr>';
       return head + p.listings.map(function (l) {
-        var tag = l.cheapest ? '<span class="cheapest">cheapest</span>' : '';
         var how = l.match_method ? '<span class="method" title="how this listing was matched">' + escapeHTML(l.match_method) + '</span>' : '';
-        return rowHTML(l, 'group-row', tag).replace('</a>', '</a>' + how);
+        return rowHTML(l, 'group-row').replace('</a>', '</a>' + how);
       }).join('');
     }).join('');
   }
@@ -307,22 +447,11 @@
   function render(rows) {
     if (rows.length === 0) {
       rowsEl.innerHTML = '';
-      statusEl.textContent = 'No sets match.';
+      statusEl.textContent = 'No kits match. Clear a filter, or untick "Hide out of stock".';
       return;
     }
-    statusEl.textContent = rows.length + ' set' + (rows.length === 1 ? '' : 's');
-    rowsEl.innerHTML = rows.map(function (row) {
-      var atLow = row.current_price_cents <= row.lowest_price_cents;
-      var outOfStock = row.availability === 'out_of_stock';
-      var preorder = row.availability === 'preorder';
-      return '<tr>' +
-        '<td data-label="Set"><button class="star" data-set="' + row.set_id + '" title="Watch this kit">&#9734;</button><a class="name" href="' + row.url.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener">' + escapeHTML(row.name) + (row.grade ? ' <span class="shop">(' + escapeHTML(row.grade) + ')</span>' : '') + '</a>' +
-          (outOfStock ? '<br><span class="out-of-stock">Out of stock</span>' : '') + (preorder ? '<br><span class="shop">Pre-order</span>' : '') + '</td>' +
-        '<td data-label="Shop">' + escapeHTML(row.shop_name) + '</td>' +
-        '<td data-label="Current price"><span class="price-current' + (atLow ? ' at-low' : '') + '">' + formatPrice(row.current_price_cents, row.currency) + '</span></td>' +
-        '<td data-label="Lowest recorded"><span class="price-lowest">' + formatPrice(row.lowest_price_cents, row.currency) + '</span></td>' +
-        '</tr>';
-    }).join('');
+    statusEl.textContent = rows.length + ' listing' + (rows.length === 1 ? '' : 's');
+    rowsEl.innerHTML = rows.map(function (row) { return rowHTML(row, ''); }).join('');
   }
 
   function search() {
@@ -403,6 +532,52 @@
   function safeURL(u) { return /^https?:\/\//i.test(u || '') ? u : '#'; }
   function errBox(err) { return '<div class="empty">Error: ' + escapeHTML(err.message) + '</div>'; }
 
+  // ---- Tooltips: any element with data-tip, shown after a short delay (hover or keyboard focus) ----
+  var TIP_DELAY_MS = 150;
+  var tipEl = document.getElementById('tip');
+  var tipTimer = null;
+  function showTip(target) {
+    tipEl.textContent = target.getAttribute('data-tip');
+    tipEl.style.left = '0px'; tipEl.style.top = '0px';
+    var r = target.getBoundingClientRect(), t = tipEl.getBoundingClientRect();
+    var left = Math.min(Math.max(8, r.left + r.width / 2 - t.width / 2), window.innerWidth - t.width - 8);
+    var top = r.top - t.height - 8;
+    if (top < 8) top = r.bottom + 8; // no room above: go below
+    tipEl.style.left = left + 'px';
+    tipEl.style.top = top + 'px';
+    tipEl.classList.add('show');
+  }
+  function hideTip() { clearTimeout(tipTimer); tipEl.classList.remove('show'); }
+  function tipTarget(e) { return e.target.closest ? e.target.closest('[data-tip]') : null; }
+  document.addEventListener('mouseover', function (e) {
+    var t = tipTarget(e);
+    if (!t) return;
+    clearTimeout(tipTimer);
+    tipTimer = setTimeout(function () { showTip(t); }, TIP_DELAY_MS);
+  });
+  document.addEventListener('mouseout', function (e) { if (tipTarget(e)) hideTip(); });
+  document.addEventListener('focusin', function (e) { var t = tipTarget(e); if (t) showTip(t); });
+  document.addEventListener('focusout', hideTip);
+  window.addEventListener('scroll', hideTip, true);
+
+  // ---- Theme: system (default), light or dark; remembered in this browser ----
+  var themeButtons = [].slice.call(document.querySelectorAll('[data-theme-choice]'));
+  function currentTheme() { var t = document.documentElement.getAttribute('data-theme'); return t === 'light' || t === 'dark' ? t : 'system'; }
+  function markTheme() {
+    var cur = currentTheme();
+    themeButtons.forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-theme-choice') === cur)); });
+  }
+  themeButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var choice = b.getAttribute('data-theme-choice');
+      if (choice === 'system') document.documentElement.removeAttribute('data-theme');
+      else document.documentElement.setAttribute('data-theme', choice);
+      try { if (choice === 'system') localStorage.removeItem('gunpla.theme'); else localStorage.setItem('gunpla.theme', choice); } catch (e) { /* not remembered */ }
+      markTheme();
+    });
+  });
+  markTheme();
+
   // ---- Tabs ----
   var views = { search: document.getElementById('searchView'), watches: document.getElementById('watchesView'), review: document.getElementById('reviewView') };
   var tabs = { search: document.getElementById('tabSearch'), watches: document.getElementById('tabWatches'), review: document.getElementById('tabReview') };
@@ -411,6 +586,7 @@
     Object.keys(views).forEach(function (k) {
       views[k].style.display = k === name ? '' : 'none';
       tabs[k].className = k === name ? 'active' : '';
+      if (k === name) tabs[k].setAttribute('aria-current', 'page'); else tabs[k].removeAttribute('aria-current');
     });
     try { history.replaceState(null, '', name === 'search' ? location.pathname : '#' + name); } catch (e) { /* ignore */ }
     if (name === 'watches') renderWatches();
@@ -446,25 +622,39 @@
     return { cls: '', text: 'nothing in stock' };
   }
 
+  // Stripe colour: green when a buyable listing is at or under the target, grey when paused, red otherwise.
+  function watchColour(w) { return !w.enabled ? 'paused' : w.hit ? 'hit' : 'miss'; }
+
   function renderWatches() {
     var el = document.getElementById('watchList');
     el.innerHTML = '<div class="empty">Loading…</div>';
     loadWatchedSets().then(function (d) {
       if (d.watches.length === 0) {
-        el.innerHTML = '<div class="empty">No watches yet. Click the ☆ next to a set in Search to watch it.</div>';
+        el.innerHTML = '<div class="empty">No watches yet. Click the ☆ next to a kit in Search to get alerted on its price or stock.</div>';
         return;
       }
       el.innerHTML = d.watches.map(function (w) {
         var st = watchState(w);
-        var target = w.max_price_cents ? ' &middot; target ≤ ' + eur(w.max_price_cents) : '';
         var alerts = [w.on_restock ? 'restock' : '', w.on_new ? 'new listings' : ''].filter(Boolean).join(', ');
-        var line = w.best ? 'Best now ' + eur(w.best.current_price_cents) + ' at <a href="' + escapeHTML(safeURL(w.best.url)) + '" target="_blank" rel="noopener">' + escapeHTML(w.best.shop_name) + '</a>' : 'Nothing buyable right now';
+        var side;
+        if (w.best) {
+          var gap = '';
+          if (w.max_price_cents) {
+            var diff = w.best.current_price_cents - w.max_price_cents;
+            gap = diff <= 0 ? '<span class="wgap hit">' + eur(-diff) + ' under target</span>' : '<span class="wgap">' + eur(diff) + ' above target</span>';
+          }
+          side = '<span class="wprice' + (w.hit ? ' hit' : '') + '">' + eur(w.best.current_price_cents) + '</span>' +
+            '<span class="wwhere">at <a href="' + escapeHTML(safeURL(w.best.url)) + '" target="_blank" rel="noopener">' + escapeHTML(w.best.shop_name) + '</a></span>' + gap;
+        } else {
+          side = '<span class="wwhere">Nothing in stock right now</span>';
+        }
         var warn = w.missing_variants.length ? '<div class="warn-line">No listing has the version ' + w.missing_variants.map(escapeHTML).join(', ') + ' any more. Edit the watch to pick again.</div>' : '';
-        return '<div class="watch-card' + (w.enabled ? '' : ' paused') + '"><div style="display:flex;align-items:center;gap:6px"><div class="wtitle" style="flex:1">' + escapeHTML(w.label) +
-          '<span class="badge ' + st.cls + '">' + st.text + '</span></div>' +
-          '<button class="btn small" data-edit="' + w.id + '">Edit</button></div>' +
-          '<div class="wsub">' + escapeHTML(w.spec.grade || 'N/A') + ' &middot; ' + escapeHTML(w.versions.join(', ') || 'all versions') + ' &middot; ' + w.listings + ' listing' + (w.listings === 1 ? '' : 's') + target +
-          (alerts ? ' &middot; alerts: ' + alerts : '') + '</div><div>' + line + '</div>' + warn + '</div>';
+        var badge = !w.enabled || st.cls === 'warn' ? '<span class="badge ' + st.cls + '">' + st.text + '</span>' : '';
+        return '<div class="watch-card' + (w.enabled ? '' : ' paused') + '" data-state="' + watchColour(w) + '">' +
+          '<div><div class="wtitle">' + gradeChip(w.spec.grade) + escapeHTML(w.label) + badge + '</div>' +
+          '<div class="wsub">' + escapeHTML(w.versions.join(', ') || 'all versions') + ' &middot; ' + w.listings + ' listing' + (w.listings === 1 ? '' : 's') +
+          (w.max_price_cents ? ' &middot; target ' + eur(w.max_price_cents) + ' or less' : '') + (alerts ? ' &middot; alerts on ' + alerts : '') + '</div></div>' +
+          '<div class="wside">' + side + '<button class="btn small" data-edit="' + w.id + '">Edit</button></div>' + warn + '</div>';
       }).join('');
       el._watches = d.watches;
     }).catch(function (err) { el.innerHTML = errBox(err); });
@@ -688,9 +878,9 @@
     only.forEach(function (w) { onlySet[w] = true; });
     var versions = s.versions.map(function (w) { return '<span class="chip ver' + (onlySet[w] ? ' diff' : '') + '">' + escapeHTML(w) + '</span>'; }).join('');
     var words = s.words.map(function (w) { return '<span class="chip' + (onlySet[w] ? ' diff' : '') + '">' + escapeHTML(w) + '</span>'; }).join('');
-    return '<div class="side"><div class="shop">' + escapeHTML(s.shop_name) + ' &middot; ' + escapeHTML(s.grade || 'N/A') + ' &middot; #' + s.set_id + '</div>' +
+    return '<div class="side"><div class="shop">' + gradeChip(s.grade) + escapeHTML(s.shop_name) + ' &middot; #' + s.set_id + '</div>' +
       '<a class="name" href="' + escapeHTML(safeURL(s.url)) + '" target="_blank" rel="noopener">' + escapeHTML(s.name) + '</a>' +
-      '<div>' + formatPrice(s.current_price_cents, s.currency) + (s.availability === 'out_of_stock' ? ' <span class="out-of-stock">out of stock</span>' : '') + '</div>' +
+      '<div class="side-price">' + formatPrice(s.current_price_cents, s.currency) + (s.availability === 'out_of_stock' ? ' <span class="out-of-stock">out of stock</span>' : '') + '</div>' +
       '<div class="keyline">model <b>' + (s.model ? escapeHTML(s.model) : '–') + '</b> ' + versions + words + '</div></div>';
   }
   function debugText(it) {
@@ -702,15 +892,15 @@
 
   function drawReview(d) {
     revItems = d.items;
-    document.getElementById('revCounts').textContent = 'close ' + d.counts.close + ' · version ' + d.counts.version;
-    revStatus.textContent = d.total === 0 ? 'Nothing to review.' : (d.items.length < d.total ? 'Showing ' + d.items.length + ' of ' + d.total + ' pairs. Narrow the filters to see the rest.' : d.total + ' pair' + (d.total === 1 ? '' : 's'));
+    document.getElementById('revCounts').textContent = d.counts.close + ' close matches, ' + d.counts.version + ' version differences';
+    revStatus.textContent = d.total === 0 ? 'Nothing to review. Pairs that might be the same kit will show up here.' : (d.items.length < d.total ? 'Showing ' + d.items.length + ' of ' + d.total + ' pairs. Narrow the filters to see the rest.' : d.total + ' pair' + (d.total === 1 ? '' : 's'));
     revList.innerHTML = d.items.map(function (it, i) {
-      return '<div class="rev-card' + (it.dismissed ? ' dismissed' : '') + '" data-i="' + i + '"><div class="rev-head"><span class="badge ' + (it.kind === 'close' ? 'stock' : '') + '">' + it.kind + '</span> <span class="shop">score ' + it.score.toFixed(2) + '</span> ' +
-        '<span class="rev-reason">' + escapeHTML(it.reason) + '</span></div>' +
+      return '<div class="rev-card' + (it.dismissed ? ' dismissed' : '') + '"' + gradeAttr(it.a.grade) + ' data-i="' + i + '"><div class="rev-head"><span class="badge ' + (it.kind === 'close' ? 'stock' : '') + '">' + (it.kind === 'close' ? 'Close match' : 'Version difference') + '</span>' +
+        '<span class="rev-reason">' + escapeHTML(it.reason) + '</span><span class="score" title="How similar the matcher found the two names">similarity ' + it.score.toFixed(2) + '</span></div>' +
         '<div class="rev-sides">' + sideHTML(it.a, it.only_a) + sideHTML(it.b, it.only_b) + '</div>' +
-        '<div class="rev-actions"><button class="btn small primary" data-act="link">Same kit: link</button> ' +
+        '<div class="rev-actions"><button class="btn small primary" data-act="link">Same kit: link</button>' +
         (it.dismissed ? '<button class="btn small" data-act="restore">Restore</button>' : '<button class="btn small" data-act="dismiss">Different kits: dismiss</button>') +
-        ' <button class="btn small" data-act="copy" title="Copy the names, how the matcher read them and why, to paste into an issue or a prompt">Copy details</button></div></div>';
+        '<button class="btn small" data-act="copy" title="Copy the names, how the matcher read them and why, to paste into an issue or a prompt">Copy details</button></div></div>';
     }).join('');
   }
 
