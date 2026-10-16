@@ -12,6 +12,7 @@ import (
 
 	"gunpla-collector/internal/catalog"
 	"gunpla-collector/internal/matcher"
+	"gunpla-collector/internal/scraper"
 	"gunpla-collector/internal/store"
 	"gunpla-collector/internal/watchlist"
 )
@@ -176,8 +177,27 @@ func TestReviewEndpoints(t *testing.T) {
 	if out.Counts["close"] != 1 || out.Counts["version"] != 1 {
 		t.Errorf("counts = %v, want per-kind counts under the shop filter", out.Counts)
 	}
+	// Grade: a pair matches on either side's grade; a blank side adds none.
+	fc.review[0].RowA.Grade, fc.review[0].RowB.Grade = "MG", ""
+	fc.review[1].RowA.Grade, fc.review[1].RowB.Grade = "HG", "HG"
+	fc.review[2].RowA.Grade, fc.review[2].RowB.Grade = "mg", "PG"
 	out = reviewJSON{}
-	json.Unmarshal(send(s, "GET", "/api/review?limit=1", "", nil).Body.Bytes(), &out)
+	json.Unmarshal(send(s, "GET", "/api/review?grade=MG", "", nil).Body.Bytes(), &out)
+	if out.Total != 2 || out.Items[0].A.SetID != 1 || out.Items[1].A.SetID != 5 {
+		t.Errorf("grade=MG = %+v, want pairs 1 and 5", out)
+	}
+	if out.GradeCounts["MG"] != 2 || out.GradeCounts["HG"] != 1 || out.GradeCounts["PG"] != 1 || out.Counts["close"] != 2 || out.Counts["version"] != 0 {
+		t.Errorf("counts = %v / %v, want grade counts ignoring the grade filter", out.GradeCounts, out.Counts)
+	}
+	// Out of stock: a pair with an out-of-stock side is hidden unless asked for.
+	fc.review[1].RowB.Availability = scraper.AvailabilityOutOfStock
+	out = reviewJSON{}
+	json.Unmarshal(send(s, "GET", "/api/review", "", nil).Body.Bytes(), &out)
+	if out.Total != 2 || out.Counts["version"] != 0 || out.GradeCounts["HG"] != 0 {
+		t.Errorf("hide out of stock: %+v", out)
+	}
+	out = reviewJSON{}
+	json.Unmarshal(send(s, "GET", "/api/review?show_out_of_stock=1&limit=1", "", nil).Body.Bytes(), &out)
 	if out.Total != 3 || len(out.Items) != 1 {
 		t.Errorf("limit: total %d items %d", out.Total, len(out.Items))
 	}
