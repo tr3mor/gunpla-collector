@@ -3,11 +3,13 @@ package web
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
 	"gunpla-collector/internal/catalog"
 	"gunpla-collector/internal/matcher"
+	"gunpla-collector/internal/scraper"
 )
 
 // Defaults for the review list; it can be large, so it is capped.
@@ -44,6 +46,10 @@ type reviewJSON struct {
 	// breaks them down by kind (ignoring the kind filter).
 	Total  int            `json:"total"`
 	Counts map[string]int `json:"counts"`
+	// GradeCounts breaks the pairs down by grade (a pair counts under each
+	// grade either side has), ignoring the grade filter but honouring the
+	// others.
+	GradeCounts map[string]int `json:"grade_counts"`
 }
 
 func (s *Server) reviewSide(row catalog.ReviewRow, a bool) reviewSideJSON {
@@ -55,10 +61,13 @@ func (s *Server) reviewSide(row catalog.ReviewRow, a bool) reviewSideJSON {
 }
 
 // handleReview lists near-miss pairs: ?kind=close|version, ?q= (text in
-// either name), ?shop= (either side), ?dismissed=1, ?limit=.
+// either name), ?shop= (either side), ?grade= (either side), ?dismissed=1,
+// ?show_out_of_stock=1 (otherwise pairs with an out-of-stock side are
+// left out), ?limit=.
 func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	kind, shop := q.Get("kind"), strings.TrimSpace(q.Get("shop"))
+	kind, shop, grade := q.Get("kind"), strings.TrimSpace(q.Get("shop")), strings.TrimSpace(q.Get("grade"))
+	showOOS := q.Get("show_out_of_stock") == "1"
 	text := strings.ToLower(strings.TrimSpace(q.Get("q")))
 	limit := defaultReviewLimit
 	if n, err := strconv.Atoi(q.Get("limit")); err == nil && n > 0 {
@@ -69,12 +78,24 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	out := reviewJSON{Items: []reviewItemJSON{}, Counts: map[string]int{matcher.KindClose: 0, matcher.KindVersion: 0}}
+	out := reviewJSON{Items: []reviewItemJSON{}, Counts: map[string]int{matcher.KindClose: 0, matcher.KindVersion: 0}, GradeCounts: map[string]int{}}
 	for _, row := range rows {
+		if !showOOS && (row.RowA.Availability == scraper.AvailabilityOutOfStock || row.RowB.Availability == scraper.AvailabilityOutOfStock) {
+			continue
+		}
 		if shop != "" && row.RowA.ShopSlug != shop && row.RowB.ShopSlug != shop {
 			continue
 		}
 		if text != "" && !strings.Contains(strings.ToLower(row.A.Name), text) && !strings.Contains(strings.ToLower(row.B.Name), text) {
+			continue
+		}
+		grades := pairGrades(row)
+		if kind == "" || row.Kind == kind {
+			for _, g := range grades {
+				out.GradeCounts[g]++
+			}
+		}
+		if grade != "" && !slices.Contains(grades, strings.ToUpper(grade)) {
 			continue
 		}
 		out.Counts[row.Kind]++
@@ -92,6 +113,19 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	s.writeJSON(w, out)
+}
+
+// pairGrades lists the distinct known grades of a pair's two sides, upper
+// case. A side
+// with no grade adds nothing, so such a pair shows under the other side's.
+func pairGrades(row catalog.ReviewRow) []string {
+	var out []string
+	for _, g := range []string{row.RowA.Grade, row.RowB.Grade} {
+		if g = strings.ToUpper(g); g != "" && !slices.Contains(out, g) {
+			out = append(out, g)
+		}
+	}
+	return out
 }
 
 type pairRequest struct {

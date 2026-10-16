@@ -333,7 +333,9 @@
   <div class="controls">
     <select id="revKind"><option value="close">Close matches</option><option value="version">Version differences</option><option value="">Both</option></select>
     <select id="revShop"><option value="">Any shop</option></select>
+    <select id="revGrade"><option value="">All grades</option></select>
     <input id="revQ" type="search" placeholder="Filter by name…" autocomplete="off">
+    <label class="checkbox"><input id="revHideOOS" type="checkbox" checked> Hide out of stock</label>
     <label class="checkbox"><input id="revDismissed" type="checkbox"> Show dismissed</label>
   </div>
   <main>
@@ -863,8 +865,10 @@
   // ---- Near misses ----
   var revKind = document.getElementById('revKind');
   var revShop = document.getElementById('revShop');
+  var revGrade = document.getElementById('revGrade');
   var revQ = document.getElementById('revQ');
   var revDismissed = document.getElementById('revDismissed');
+  var revHideOOS = document.getElementById('revHideOOS');
   var revList = document.getElementById('revList');
   var revStatus = document.getElementById('revStatus');
   var revItems = [];
@@ -890,8 +894,27 @@
       'only A: [' + it.only_a.join(' ') + ']  only B: [' + it.only_b.join(' ') + ']'].join('\n');
   }
 
+  // The grade filter lists the grades present with their pair counts, and
+  // remembers the last choice so the page reopens on the small piles.
+  var REV_GRADE_KEY = 'gunpla.reviewGrade';
+  var revGradeWanted = '';
+  try { revGradeWanted = localStorage.getItem(REV_GRADE_KEY) || ''; } catch (e) { /* not remembered */ }
+  function drawReviewGrades(counts) {
+    var order = ['PG', 'MG', 'RG', 'HG'];
+    var grades = Object.keys(counts).sort(function (a, b) {
+      var ia = order.indexOf(a), ib = order.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || (a < b ? -1 : 1);
+    });
+    if (revGradeWanted && grades.indexOf(revGradeWanted) < 0) grades.push(revGradeWanted);
+    revGrade.innerHTML = '<option value="">All grades</option>' + grades.map(function (g) {
+      return '<option value="' + escapeHTML(g) + '">' + escapeHTML(g) + ' (' + (counts[g] || 0) + ')</option>';
+    }).join('');
+    revGrade.value = revGradeWanted;
+  }
+
   function drawReview(d) {
     revItems = d.items;
+    drawReviewGrades(d.grade_counts || {});
     document.getElementById('revCounts').textContent = d.counts.close + ' close matches, ' + d.counts.version + ' version differences';
     revStatus.textContent = d.total === 0 ? 'Nothing to review. Pairs that might be the same kit will show up here.' : (d.items.length < d.total ? 'Showing ' + d.items.length + ' of ' + d.total + ' pairs. Narrow the filters to see the rest.' : d.total + ' pair' + (d.total === 1 ? '' : 's'));
     revList.innerHTML = d.items.map(function (it, i) {
@@ -908,12 +931,19 @@
     var params = new URLSearchParams();
     if (revKind.value) params.set('kind', revKind.value);
     if (revShop.value) params.set('shop', revShop.value);
+    if (revGradeWanted) params.set('grade', revGradeWanted);
     if (revQ.value.trim()) params.set('q', revQ.value.trim());
     if (revDismissed.checked) params.set('dismissed', '1');
+    if (!revHideOOS.checked) params.set('show_out_of_stock', '1');
     revStatus.textContent = 'Loading…';
     api('GET', '/api/review?' + params.toString()).then(drawReview).catch(function (err) { revStatus.textContent = ''; revList.innerHTML = errBox(err); });
   }
-  [revKind, revShop, revDismissed].forEach(function (el) { el.addEventListener('change', loadReview); });
+  [revKind, revShop, revHideOOS, revDismissed].forEach(function (el) { el.addEventListener('change', loadReview); });
+  revGrade.addEventListener('change', function () {
+    revGradeWanted = revGrade.value;
+    try { localStorage.setItem(REV_GRADE_KEY, revGradeWanted); } catch (e) { /* not remembered */ }
+    loadReview();
+  });
   revQ.addEventListener('input', function () { clearTimeout(revTimer); revTimer = setTimeout(loadReview, 250); });
 
   revList.addEventListener('click', function (e) {

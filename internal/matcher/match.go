@@ -2,6 +2,7 @@ package matcher
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -234,15 +235,33 @@ func score(a, b *entry) (float64, bool) {
 // near-miss review page shows so a wrong verdict can be traced to the
 // words or thresholds behind it.
 func judge(a, b *entry) (float64, bool, string) {
+	sc, ok, why := judgeNames(a, b)
+	// A match that needed filler words ignored ranks just below an exact
+	// one, so a shop's plain and "Unit" listings of a kit don't tie.
+	if sc > 0 && (len(withoutFiller(a.key.Tokens, b.key.Tokens)) != len(a.key.Tokens) || len(withoutFiller(b.key.Tokens, a.key.Tokens)) != len(b.key.Tokens)) {
+		sc -= 0.01
+	}
+	return sc, ok, why
+}
+
+func judgeNames(a, b *entry) (float64, bool, string) {
 	if a.Grade != "" && b.Grade != "" && !strings.EqualFold(a.Grade, b.Grade) {
 		return 0, false, "different grades (" + a.Grade + " vs " + b.Grade + ")"
+	}
+	// The RG series number identifies one kit exactly.
+	if a.key.Series != "" && b.key.Series != "" {
+		if a.key.Series != b.key.Series {
+			return 0, false, "different RG numbers (" + a.key.Series + " vs " + b.key.Series + ")"
+		}
+		return 1, true, "same RG number (" + a.key.Series + ")"
 	}
 	if !equal(a.key.Distinct, b.key.Distinct) {
 		return 0, false, "version words differ: " + words(a.key.Distinct) + " vs " + words(b.key.Distinct)
 	}
 	ka, kb := a.key, b.key
+	ka.Tokens, kb.Tokens = withoutFiller(ka.Tokens, kb.Tokens), withoutFiller(kb.Tokens, ka.Tokens)
 	if ka.Model != "" && kb.Model != "" {
-		if ka.Model != kb.Model {
+		if !sameModel(ka.Model, kb.Model) {
 			return 0, false, "different model numbers (" + ka.Model + " vs " + kb.Model + ")"
 		}
 		switch {
@@ -273,6 +292,29 @@ func judge(a, b *entry) (float64, bool, string) {
 	}
 	why := "no shared model number, and the words are only"
 	return s, false, fmt.Sprintf("%s %.2f similar (needs %.2f)", why, s, jaccardAccept)
+}
+
+// withoutFiller drops from toks what the other name lacks and is probably
+// not a word: "unit" ("Gundam Unit 4" against "Gundam"), and a run of three or
+// more lone letters, which is initials or a code fragment ("S.N.R.I.",
+// "E.F.S.F.") that one shop spells out. One or two lone letters stay, since
+// "Zaku I" and "Zaku" are different kits.
+func withoutFiller(toks, other []string) []string {
+	lone := func(t string) bool { return len(t) == 1 && t[0] >= 'a' && t[0] <= 'z' }
+	unshared := 0
+	for _, t := range toks {
+		if lone(t) && !slices.Contains(other, t) {
+			unshared++
+		}
+	}
+	out := make([]string, 0, len(toks))
+	for _, t := range toks {
+		if !slices.Contains(other, t) && (t == "unit" || unshared >= 3 && lone(t)) {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
 }
 
 func words(w []string) string {
