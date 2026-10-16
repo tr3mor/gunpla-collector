@@ -22,7 +22,14 @@ type Key struct {
 	Distinct []string
 	// Tokens are the remaining descriptive words, sorted and de-duplicated.
 	Tokens []string
+	// Series is the Real Grade series number some shops print ("Model Kit
+	// 35" at GeeksHeaven, "RG35" at ZeonMarket), or "". It identifies one
+	// RG kit exactly, whatever the rest of the name says.
+	Series string
 }
+
+// modelPattern matches one model number (see reModel).
+const modelPattern = `[a-z]{1,5}-?[a-z]?\d{1,4}[a-z0-9]{0,8}(?:-[a-z0-9]{1,8})*(?:/[a-z0-9]{1,3})?|[a-z]{2,5}-[a-z]-\d{1,3}[a-z]?`
 
 var (
 	reScale = regexp.MustCompile(`\b(?:1|re)\s*[/:]\s*\d+\b`)
@@ -31,8 +38,10 @@ var (
 	// A model number: 1-5 letters, optional hyphen, a digit run, then any
 	// hyphen-separated alphanumeric tail ("RX-78-2", "GF13-017NJ",
 	// "GF-13-001NHII", "XXXG-00W0", "ASW-G-08A", "ZGMF-X20A/B").
-	reModel = regexp.MustCompile(`\b([a-z]{1,5}-?[a-z]?\d{1,4}[a-z0-9]{0,8}(?:-[a-z0-9]{1,8})*(?:/[a-z0-9]{1,3})?|[a-z]{2,5}-[a-z]-\d{1,3}[a-z]?)(?:\b|$)`)
-	reSplit = regexp.MustCompile(`[^a-z0-9.]+`)
+	reModel = regexp.MustCompile(`\b(` + modelPattern + `)(?:\b|$)`)
+	// Two codes joined by "+" ("GN-0000+GNR-010"): keep the first.
+	reJoinedCode = regexp.MustCompile(`\b(` + modelPattern + `)\s*\+\s*(?:` + modelPattern + `)(?:\b|$)`)
+	reSplit      = regexp.MustCompile(`[^a-z0-9.]+`)
 	// Shop-added dimensions ("18cm"), and the "GQuuuuuuX" series name in
 	// all its spellings.
 	reSize = regexp.MustCompile(`\b\d+\s?cm\b`)
@@ -41,8 +50,20 @@ var (
 	// version marker.
 	reModelKitNo = regexp.MustCompile(`\bmodel\s+kit\s+\d{1,3}\b`)
 	reGQuux      = regexp.MustCompile(`\bgq?u{2,}x\b`)
-	reEntry      = regexp.MustCompile(`\bentry\s+grade\b`)
-	reTransAm    = regexp.MustCompile(`\btrans[\s-]?am\b`)
+	// "*NEW MODEL*" marks a re-tooled kit sold beside the old one; unlike a
+	// stray "new" it makes a different product.
+	reNewModel = regexp.MustCompile(`\*\s*new\s+model\s*\*`)
+	// "+AQM/E-X01" after a Strike's model number names the pack, not a word.
+	reStrikePack = regexp.MustCompile(`\+\s*[a-z]{2,5}/[a-z]-[a-z0-9]+`)
+	// "Age II" and "AGEII", "Age 2" and "AGE-2" are the same name.
+	reAgeII = regexp.MustCompile(`\bage\s+(ii|iii)\b`)
+	reAgeN  = regexp.MustCompile(`\bage\s+(\d)\b`)
+	// RG series numbers: "Model Kit 35" (with an RG in the name) or "RG35".
+	reRGWord  = regexp.MustCompile(`\brg\b`)
+	reRGSerie = regexp.MustCompile(`\brg(\d{1,3})\b`)
+	reKitNo   = regexp.MustCompile(`\bmodel\s+kit\s+(\d{1,3})\b`)
+	reEntry   = regexp.MustCompile(`\bentry\s+grade\b`)
+	reTransAm = regexp.MustCompile(`\btrans[\s-]?am\b`)
 	// "Master Grade" etc. are removed as a phrase, not word by word, so
 	// "Perfect Pack" and "High Maneuver" keep their meaning.
 	reGradeWords = regexp.MustCompile(`\b(?:master|high|real|perfect|no)\s+grade\b`)
@@ -80,6 +101,9 @@ var noise = toSet(
 	// prints and another drops: "(GQ)", "(Earth Federation)", "ORB", "BF",
 	// GeeksHeaven's "CBMS" and "A Tentative".
 	"gq", "earth", "federation", "orb", "bf", "cbms", "tentative", "fighters",
+	// ZeonMarket prefixes some listings with its "Solomon" label, and one
+	// shop marks a kit "Damaged Box".
+	"solomon", "damaged", "box",
 )
 
 // reHGPrefix matches grade-prefix words like HGUC, HGAW, HGBF, HGIBO: the
@@ -95,7 +119,7 @@ var reDotBetweenLetters = regexp.MustCompile(`([a-z])\.([a-z])`)
 var distinctWords = toSet(
 	"clear", "metallic", "titanium", "finish", "gold", "ex", "revive", "limited",
 	"special", "premium", "extra", "color", "colour", "expo", "event", "coating",
-	"custom", "sd", "mgsd", "mgex", "eg", "mode", "transam",
+	"custom", "sd", "mgsd", "mgex", "eg", "mode", "transam", "newmodel",
 )
 
 // reCatalogNo matches shop catalogue numbers like "HG021" or "RG09" that
@@ -121,7 +145,13 @@ func toSet(words ...string) map[string]struct{} {
 func NewKey(name string) Key {
 	s := strings.ToLower(name)
 	s = folder.Replace(s)
+	var k Key
+	k.Series = seriesNumber(s)
 	s = reGradeWords.ReplaceAllString(s, " ")
+	s = reNewModel.ReplaceAllString(s, " newmodel ")
+	s = reStrikePack.ReplaceAllString(s, " ")
+	s = reAgeII.ReplaceAllString(s, "age$1")
+	s = reAgeN.ReplaceAllString(s, "age-$1")
 	s = reEntry.ReplaceAllString(s, " eg ")
 	s = reTransAm.ReplaceAllString(s, " transam ")
 	s = reSize.ReplaceAllString(s, " ")
@@ -143,14 +173,23 @@ func NewKey(name string) Key {
 		s = reDotBetweenLetters.ReplaceAllString(s, "$1 $2")
 	}
 
-	var k Key
+	// The first model number identifies the suit. A second code joined to
+	// it with "+" ("GN-0000+GNR-010") is dropped, or its pieces would read
+	// as words and version numbers. So is the model repeated in the name,
+	// and a bare number that only repeats the model's last part ("RX-78-4
+	// ... Unit 4").
+	s = reJoinedCode.ReplaceAllString(s, "$1")
+	var lastPart string
 	for _, m := range reModel.FindAllStringSubmatch(s, -1) {
 		prefix := m[1][:strings.IndexAny(m[1], "-0123456789")]
 		if _, stop := modelPrefixStop[prefix]; stop || len(prefix) < 2 {
 			continue
 		}
 		k.Model = strings.ReplaceAll(m[1], "-", "")
-		s = strings.Replace(s, m[0], " ", 1)
+		if i := strings.LastIndex(m[1], "-"); i >= 0 && strings.Trim(m[1][i+1:], "0123456789") == "" {
+			lastPart = m[1][i+1:]
+		}
+		s = regexp.MustCompile(`\b`+regexp.QuoteMeta(m[0])+`(?:\b|$)`).ReplaceAllString(s, " ")
 		break
 	}
 
@@ -163,7 +202,7 @@ func NewKey(name string) Key {
 		if tok == "pb" {
 			tok = "premium" // PlamoDX's prefix for Premium Bandai exclusives
 		}
-		if tok == "" {
+		if tok == "" || tok == lastPart {
 			continue
 		}
 		if _, skip := noise[tok]; skip || reCatalogNo.MatchString(tok) || reHGPrefix.MatchString(tok) {
@@ -177,6 +216,43 @@ func NewKey(name string) Key {
 	}
 	k.Distinct, k.Tokens = sortedKeys(distinct), sortedKeys(tokens)
 	return k
+}
+
+// seriesNumber finds the RG series number in a lowercased name. GeeksHeaven's
+// "Model Kit 35" is a catalogue number for every grade, so it counts only
+// when the name says RG.
+func seriesNumber(s string) string {
+	if m := reRGSerie.FindStringSubmatch(s); m != nil {
+		return strings.TrimLeft(m[1], "0")
+	}
+	if reRGWord.MatchString(s) {
+		if m := reKitNo.FindStringSubmatch(s); m != nil {
+			return strings.TrimLeft(m[1], "0")
+		}
+	}
+	return ""
+}
+
+// sameModel reports whether two model numbers (both non-empty) name the same
+// suit. A "/FP" style suffix is ignored, and a code with a suffix that only
+// adds letters to the other ("GN-0000" and "GN-0000GNHW/7SG") counts as the
+// same. Without the suffix such letters tell kits apart (MS-06 and MS-06FZ,
+// GP01 and GP01Fb).
+func sameModel(a, b string) bool {
+	if len(a) > len(b) {
+		a, b = b, a
+	}
+	longSuffixed := strings.Contains(b, "/")
+	a, _, _ = strings.Cut(a, "/")
+	b, _, _ = strings.Cut(b, "/")
+	if a == b {
+		return true
+	}
+	if len(a) > len(b) {
+		a, b = b, a
+	}
+	rest, ok := strings.CutPrefix(b, a)
+	return longSuffixed && ok && len(rest) >= 2 && strings.Trim(rest, "abcdefghijklmnopqrstuvwxyz") == "" && strings.ContainsAny(a, "0123456789")
 }
 
 func isDistinct(tok string) bool {

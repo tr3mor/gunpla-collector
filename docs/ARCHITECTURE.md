@@ -86,7 +86,10 @@ name the product.
 A listing joins a product when it shares a barcode (EAN) with it, or when
 its normalised name does: same grade, same model number (e.g. RX-78-2),
 same variant words (Ver.Ka, Clear, Custom, Premium Bandai, ...), and enough
-overlapping words. Two listings from one shop are never merged. Near-misses
+overlapping words. Two Real Grade listings that both print the RG series
+number (GeeksHeaven's "Model Kit 35", ZeonMarket's "RG35") are the same kit
+when the numbers agree and different when they don't. Two listings from one
+shop are never merged. Near-misses
 are printed instead of linked; fix them with `link <a> <b>` / `unlink <id>`
 (ids as shown in the `match` output). Manual choices are never overwritten.
 

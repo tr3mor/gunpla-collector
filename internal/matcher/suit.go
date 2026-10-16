@@ -16,7 +16,7 @@ const watchJaccard = 0.75
 // a user gets by trimming words in the watch editor.
 func SameSuit(spec, other Key, loose bool) bool {
 	if spec.Model != "" && other.Model != "" {
-		if spec.Model != other.Model {
+		if !sameModel(spec.Model, other.Model) {
 			return false
 		}
 		switch {

@@ -119,7 +119,7 @@ func versionSubset(a, b []string) bool {
 // word similarity (0 for different model numbers).
 func sameSuitScore(a, b Key) float64 {
 	if a.Model != "" && b.Model != "" {
-		if a.Model != b.Model {
+		if !sameModel(a.Model, b.Model) {
 			return 0
 		}
 		if len(a.Tokens) == 0 && len(b.Tokens) == 0 {

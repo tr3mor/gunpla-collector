@@ -230,3 +230,63 @@ func TestMatchReportsNearMisses(t *testing.T) {
 	})
 	_ = sugg // near-miss output is informational; just make sure Match doesn't panic on it
 }
+
+// Pairs a person linked by hand on the near-miss page (PG/MG/RG), each of
+// which the matcher used to miss for one of the reasons named.
+func TestMatchRulesFromManualLinks(t *testing.T) {
+	pairs := []struct{ name, grade, a, b string }{
+		{"initials from a subtitle are not words", "MG", "Gundam MG 1/100 Crossbone Gundam X-1 Full Cloth S.N.R.I. XM-X1 Model Kit", "1/100 MG XM-X1 Crossbone Gundam X-1 Full Cloth"},
+		{"strike pack code is not words", "RG", "RG GAT-X105 Aile Strike Gundam 1/144", "RG – GAT-X105+AQM/E-X01 Aile Strike Gundam"},
+		{"model repeated in the title", "MG", "MG Gundam AGE-1 Normal 1/100", "MG – AGE-1 Gundam AGE-1 Normal"},
+		{"unit number is the model's last part", "MG", "MG 1/100 RX-78-4 Gundam G04", "MG – RX-78-4 Gundam Unit 4 “G04”"},
+		{"second model code is not a version", "PG", "PG 00 Raiser 1/60", "PG – GN-0000+GNR-010 00 Raiser"},
+		{"age II spellings", "MG", "Gundam MG 1/100 AGE-IIMG Age II Magnum Gundam Model Kit", "MG – AGE-IIMG Gundam AGEII Magnum"},
+		{"model with a /FP suffix", "RG", "RG – GAT-X105B Build Strike Gundam", "1/144 RG GAT-X105B/FP Build Strike Gundam"},
+		{"model with a longer code", "PG", "PG – GN-0000/7S 00 Gundam Seven Sword", "Gundam PG 1/60 00 Gundam Seven Sword/G GN-0000GNHW/7SG Model Kit"},
+		{"shop brand word", "MG", "MG – RX-78GP02A Gundam “Physalis”", "Solomon 1/100 RX-78GP02A Gundam Physalis"},
+		{"RG number on both sides", "RG", "Gundam RG 1/144 God Gundam Model Kit 37", "1/144 RG GF13-017NJII Burning Gundam RG37"},
+		{"RG number, FX-550", "RG", "Gundam RG 1/144 FX-550 Skygrasper Launcher / Sword Model Kit 06", "1/144 RG FX-550 Skygrasper Launcher/Sword Pack RG06"},
+	}
+	for _, p := range pairs {
+		t.Run(p.name, func(t *testing.T) {
+			groups, _ := Match([]Listing{
+				{ID: 1, Shop: "a", Name: p.a, Grade: p.grade},
+				{ID: 2, Shop: "b", Name: p.b, Grade: p.grade},
+			})
+			if len(groups) != 1 {
+				t.Errorf("%q and %q should match, got %+v", p.a, p.b, groups)
+			}
+		})
+	}
+}
+
+// Pairs a person dismissed as different kits, and variants a shop lists
+// next to the plain kit, must stay apart.
+func TestMatchKeepsDismissedPairsApart(t *testing.T) {
+	pairs := []struct{ name, grade, a, b string }{
+		{"avalanche exia vs exia", "MG", "MG Gundam Avalanche Exia 1/100", "MG – GN-001 Gundam Exia"},
+		{"qan[t] vs full saber", "MG", "MG GNT-0000 00 Qan[T] 1/100", "MG – GNT-0000 Gundam 00 Qan[T] Full Saber"},
+		{"wing zero vs proto zero", "MG", "MG XXXG-00W0 Wing Gundam Proto Zero EW 1/100", "1/100 MG XXXG-00W0 Wing Gundam Zero"},
+		{"different RG numbers", "RG", "Gundam RG 1/144 Wing Gundam XXXG-01W Model Kit 35", "1/144 RG XXXG-01W Wing Gundam EW RG20"},
+		{"unicorn vs full armor", "MG", "MG – RX-0 Unicorn Gundam", "MG – RX-0 Full Armor Unicorn Gundam"},
+		{"rick-dom new model", "MG", "MG MS-09R Rick-Dom 1/100", "MG MS-09R Rick-Dom *NEW MODEL* 1/100"},
+		{"age-1 vs age-2", "MG", "MG Gundam AGE-1 Normal 1/100", "MG Gundam AGE-2 Normal 1/100"},
+		{"zaku I vs zaku", "HG", "HG Zaku I 1/144", "HG – MS-06 Zaku"},
+		{"MS-06 vs MS-06FZ", "HG", "HG MS-06 Zaku II 1/144", "HG – MS-06FZ Zaku II"},
+		{"GP01 vs GP01Fb", "HG", "Gundam HGUC RX-78GP01Fb Gundam GPF01Fb Model Kit 018", "HG RX-78GP01 'Gundam GP01' 1/144"},
+		{"unleashed nu vs unleashed RX-78-2", "PG", "Gundam PG Unleashed V Gundam 1/60 Model Kit", "PG – Unleashed RX-78-2 Gundam"},
+		{"lightning z vs lightning", "HG", "HG Lightning Z Gundam 1/144", "HG – LGZ-91 Lightning Gundam"},
+		{"unit-00 vs unit-01", "RG", "RG – Evangelion Unit-00", "RG – Evangelion Unit-01"},
+	}
+	for _, p := range pairs {
+		t.Run(p.name, func(t *testing.T) {
+			groups, _ := Match([]Listing{
+				{ID: 1, Shop: "a", Name: p.a, Grade: p.grade},
+				{ID: 2, Shop: "b", Name: p.b, Grade: p.grade},
+			})
+			if len(groups) != 2 {
+				t.Errorf("%q and %q should stay apart, got %+v", p.a, p.b, groups)
+			}
+		})
+	}
+}
