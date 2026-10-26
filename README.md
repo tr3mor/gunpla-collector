@@ -2,8 +2,9 @@
 
 Tracks Gunpla model kit inventory and prices at online shops over time,
 sends a daily Telegram summary of what's new, removed, or changed price,
-and serves a small web UI for searching the current catalog, watching
-kits for a target price or restock, and reviewing near-miss matches.
+and serves a small web UI for searching the current catalog, seeing how a
+kit's price moved at each shop, watching kits for a target price or restock,
+and reviewing near-miss matches.
 
 <p align="center">
   <picture>

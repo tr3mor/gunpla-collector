@@ -27,6 +27,7 @@
     --g-rg: #c8321f;
     --g-pg: #b58900;
     --g-none: #8b97a3;
+    --c0: #2456b0; --c1: #c8321f; --c2: #12794a; --c3: #b58900; --c4: #7a3fb5; --c5: #0e8a9a; --c6: #d9622b; --c7: #5d6b7a;
   }
   :root[data-theme="light"] { color-scheme: light; }
   :root[data-theme="dark"] { color-scheme: dark; }
@@ -48,6 +49,7 @@
       --g-rg: #f06a58;
       --g-pg: #e0b23a;
       --g-none: #6b7890;
+      --c0: #7aa7ff; --c1: #ff7a6b; --c2: #5fd68f; --c3: #f2c14e; --c4: #c39bff; --c5: #4fd1e0; --c6: #ff9d66; --c7: #a9b4c7;
     }
   }
   :root[data-theme="dark"] {
@@ -67,6 +69,7 @@
     --g-rg: #f06a58;
     --g-pg: #e0b23a;
     --g-none: #6b7890;
+    --c0: #7aa7ff; --c1: #ff7a6b; --c2: #5fd68f; --c3: #f2c14e; --c4: #c39bff; --c5: #4fd1e0; --c6: #ff9d66; --c7: #a9b4c7;
   }
   * { box-sizing: border-box; }
   body {
@@ -203,6 +206,47 @@
   .summary.warn { border-color: var(--danger); color: var(--danger); }
   .modal-actions { display: flex; gap: 8px; margin-top: 18px; }
   .modal-actions .spacer { flex: 1; }
+
+  /* Price history: rows open it; the panel is inline SVG with a crosshair, a legend and range buttons. */
+  tbody tr[data-hist] { cursor: pointer; }
+  .modal.hist { max-width: 1000px; }
+  .hist-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
+  .hist-head h2 { flex: 1 1 240px; margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  .hist-panel { position: relative; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 6px 2px; }
+  .hist-ptitle { font-size: 12px; font-weight: 600; color: var(--muted); padding: 0 8px 4px; }
+  .hist-chart { overflow-x: auto; touch-action: pan-y; }
+  .hist-chart svg { display: block; width: 100%; min-width: 600px; height: auto; }
+  .hist-chart text { fill: var(--muted); font-size: 12px; }
+  .hist-chart .grid { stroke: var(--border); stroke-width: 1; }
+  .hist-chart .line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: opacity .12s; }
+  .hist-chart .line.oos { stroke-dasharray: 5 4; }
+  .hist-chart .lone { transition: opacity .12s; }
+  .hist-chart .cross { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+  .hist-tip { position: absolute; z-index: 2; min-width: 190px; max-width: 360px; padding: 8px 10px; border-radius: 8px; background: var(--panel); border: 1px solid var(--border); box-shadow: var(--shadow); font-size: 12.5px; pointer-events: none; display: none; }
+  .hist-tip.show { display: block; }
+  .hist-tip .when { color: var(--muted); font-size: 12px; margin-bottom: 5px; }
+  .hist-tip .trow { display: flex; align-items: baseline; gap: 8px; padding: 1px 0; }
+  .hist-tip .sw { width: 9px; height: 9px; border-radius: 2px; flex: none; align-self: center; }
+  .hist-tip .tname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hist-tip .tval { font-weight: 700; white-space: nowrap; }
+  .hist-tip .tsub { color: var(--muted); font-weight: 400; margin-left: 5px; }
+  .hist-tip .trow.na .tname, .hist-tip .trow.na .tval { color: var(--muted); font-weight: 400; }
+  .hist-legend { margin-top: 10px; font-size: 13px; }
+  .hist-legend .lrow { display: grid; grid-template-columns: minmax(0, 1fr) 84px 84px 84px; gap: 0 10px; align-items: center; padding: 5px 8px; border-radius: 6px; cursor: pointer; }
+  .hist-legend .lrow.lhead { cursor: default; color: var(--muted); font-size: 12px; font-weight: 600; padding-top: 0; }
+  .hist-legend .lrow:not(.lhead):hover { background: color-mix(in srgb, var(--accent) 7%, var(--panel)); }
+  .hist-legend .lname { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .hist-legend .lname .sw { width: 12px; height: 4px; border-radius: 2px; flex: none; }
+  .hist-legend .lname .lt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hist-legend .lname a.lopen { color: var(--muted); text-decoration: none; flex: none; padding: 0 4px; }
+  .hist-legend .lname a.lopen:hover { color: var(--accent); }
+  .hist-legend .lnum { text-align: right; }
+  .hist-legend .lrow.off { opacity: .45; }
+  .hist-legend .lrow.off .lname .lt { text-decoration: line-through; }
+  .hist-legend .lrow.gone .lname .lt { color: var(--muted); }
+  .hist-key { margin-top: 10px; color: var(--muted); font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; }
+  .hist-key svg { vertical-align: middle; margin-right: 5px; }
+  @media (max-width: 640px) { .hist-legend .lrow { grid-template-columns: minmax(0, 1fr) 64px 64px 64px; gap: 0 4px; } }
 
   .watch-card, .rev-card { --g: var(--g-none); background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--g); border-radius: 10px; padding: 12px 16px; margin-bottom: 8px; box-shadow: var(--shadow); }
   .rev-card[data-grade="MG"] { --g: var(--g-mg); }
@@ -351,6 +395,7 @@
   <div class="modal-actions"><span class="spacer"></span><button class="btn" id="tokenCancel">Cancel</button><button class="btn primary" id="tokenOk">Continue</button></div></div></div>
 <div id="tip" role="tooltip"></div>
 <div id="modalBack" class="modal-back"><div class="modal" id="modal"></div></div>
+<div id="histBack" class="modal-back"><div class="modal hist" id="hist" role="dialog" aria-modal="true" aria-label="Price history"></div></div>
 <script>
 (function () {
   var qInput = document.getElementById('q');
@@ -406,11 +451,18 @@
     return '<span class="trend ' + cls + '" data-tip="' + tip + '" aria-label="' + tip + '" role="img" tabindex="0">' + glyph + '</span>';
   }
 
-  function rowHTML(row, cls) {
+  // What a row opens when selected: its whole kit when it has one, else the listing alone.
+  function histAttrs(productID, setID, title) {
+    var q = productID ? 'product=' + Number(productID) : 'set=' + Number(setID);
+    return ' data-hist="' + q + '" data-title="' + escapeHTML(title) + '" tabindex="0"';
+  }
+
+  function rowHTML(row, cls, kit) {
     var atLow = row.current_price_cents <= row.lowest_price_cents;
     var outOfStock = row.availability === 'out_of_stock';
     var preorder = row.availability === 'preorder';
-    return '<tr' + (cls ? ' class="' + cls + '"' : '') + gradeAttr(row.grade) + '>' +
+    kit = kit || { product: row.product_id, title: row.name };
+    return '<tr' + (cls ? ' class="' + cls + '"' : '') + gradeAttr(row.grade) + histAttrs(kit.product, row.set_id, kit.title) + '>' +
       '<td data-label="Set"><button class="star" data-set="' + row.set_id + '" title="Watch this kit" aria-label="Watch this kit">&#9734;</button>' + gradeChip(row.grade) + '<a class="name" href="' + row.url.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener">' + escapeHTML(row.name) + '</a>' +
         (outOfStock ? '<br><span class="out-of-stock">Out of stock</span>' : '') + (preorder ? '<br><span class="shop">Pre-order</span>' : '') + '</td>' +
       '<td data-label="Shop">' + escapeHTML(row.shop_name) + '</td>' +
@@ -436,12 +488,13 @@
     var multi = products.filter(function (p) { return p.listings.length > 1; }).length;
     statusEl.textContent = products.length + ' kit' + (products.length === 1 ? '' : 's') + ', ' + multi + ' sold by more than one listing';
     rowsEl.innerHTML = products.map(function (p) {
-      if (p.listings.length === 1) return rowHTML(p.listings[0], '');
-      var head = '<tr class="group-head"' + gradeAttr(p.grade) + '><td colspan="4">' + gradeChip(p.grade) + escapeHTML(p.name) +
+      var kit = { product: p.product_id, title: p.name };
+      if (p.listings.length === 1) return rowHTML(p.listings[0], '', kit);
+      var head = '<tr class="group-head"' + gradeAttr(p.grade) + histAttrs(p.product_id, p.listings[0].set_id, p.name) + '><td colspan="4">' + gradeChip(p.grade) + escapeHTML(p.name) +
         '<span class="count">' + p.listings.length + ' listings</span>' + bestHTML(p) + '</td></tr>';
       return head + p.listings.map(function (l) {
         var how = l.match_method ? '<span class="method" title="how this listing was matched">' + escapeHTML(l.match_method) + '</span>' : '';
-        return rowHTML(l, 'group-row').replace('</a>', '</a>' + how);
+        return rowHTML(l, 'group-row', kit).replace('</a>', '</a>' + how);
       }).join('');
     }).join('');
   }
@@ -861,6 +914,268 @@
       drawEditor();
     }).catch(modalError);
   });
+
+  // ---- Price history: select a result to see every listing of the kit over time ----
+  var histBack = document.getElementById('histBack');
+  var histEl = document.getElementById('hist');
+  var histReq = 0;
+  var hist = null; // { series, hidden: {index: true}, days: 0 (all), geo: what the pointer handler needs }
+
+  function closeHistory() { histReq++; hist = null; histBack.className = 'modal-back'; histEl.innerHTML = ''; hideTip(); }
+  histBack.addEventListener('click', function (e) { if (e.target === histBack) closeHistory(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && histBack.className.indexOf('open') >= 0) closeHistory(); });
+
+  function histShow(title, grade, bodyHTML, controlsHTML) {
+    histEl.innerHTML = '<div class="hist-head"><h2>' + gradeChip(grade) + escapeHTML(title) + '</h2>' + (controlsHTML || '') +
+      '<button class="btn small" id="histClose">Close</button></div>' + bodyHTML;
+    document.getElementById('histClose').onclick = closeHistory;
+  }
+
+  function openHistory(query, title, grade) {
+    var req = ++histReq;
+    hist = null;
+    histBack.className = 'modal-back open';
+    histShow(title, grade, '<div class="empty">Loading…</div>');
+    fetch('/api/history?' + query).then(function (r) {
+      return r.json().then(function (body) {
+        if (!r.ok) throw new Error(body.error || 'could not load the price history');
+        return body;
+      });
+    }).then(function (series) {
+      if (req === histReq) histStart(title, grade, series);
+    }).catch(function (err) {
+      if (req === histReq) histShow(title, grade, errBox(err));
+    });
+  }
+
+  function selectedRow(e) {
+    if (e.target.closest('a, button')) return null; // shop links and the watch star keep their own job
+    return e.target.closest('tr[data-hist]');
+  }
+  function openRow(tr) { openHistory(tr.getAttribute('data-hist'), tr.getAttribute('data-title'), tr.getAttribute('data-grade') || ''); }
+  rowsEl.addEventListener('click', function (e) { var tr = selectedRow(e); if (tr) openRow(tr); });
+  rowsEl.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && e.target.matches && e.target.matches('tr[data-hist]')) openRow(e.target);
+  });
+
+  var HW = 940, HH = 330, HPAD = { l: 58, r: 18, t: 12, b: 28 };
+  var DAY_MS = 86400000, TIP_TOLERANCE_MS = 6 * 3600000;
+  var RANGES = [[7, '7d'], [30, '30d'], [90, '90d'], [0, 'All']];
+
+  // Round tick values (in cents) that cover lo..hi.
+  function niceTicks(lo, hi) {
+    if (hi === lo) { var pad = Math.max(Math.round(hi * 0.1), 100); lo -= pad; hi += pad; }
+    var rough = (hi - lo) / 4;
+    var mag = Math.pow(10, Math.floor(Math.log(rough) / Math.LN10));
+    var step = Math.max(1, [1, 2, 5, 10].map(function (m) { return m * mag; }).filter(function (s) { return s >= rough; })[0]);
+    var v = Math.max(0, Math.floor(lo / step) * step), out = [];
+    for (;; v += step) { out.push(v); if (v >= hi) break; }
+    return out;
+  }
+
+  function fmtDay(t, withYear) {
+    var o = { day: 'numeric', month: 'short' };
+    if (withYear) o.year = 'numeric';
+    return new Date(t).toLocaleDateString(undefined, o);
+  }
+
+  function seriesLabel(s, perShop) {
+    return s.shop_name + (perShop[s.shop_slug] > 1 ? ' — ' + s.name : '') + (s.active ? '' : ' (no longer listed)');
+  }
+
+  function histStart(title, grade, series) {
+    series.forEach(function (s) {
+      s.entries.forEach(function (e) { e.t = Date.parse(e.at); });
+      s.entries = s.entries.filter(function (e) { return !isNaN(e.t); });
+    });
+    var anyPrice = series.some(function (s) { return s.entries.some(function (e) { return e.listed; }); });
+    if (!anyPrice) { histShow(title, grade, '<div class="empty">No price history for this kit yet.</div>'); return; }
+
+    var perShop = {};
+    series.forEach(function (s) { perShop[s.shop_slug] = (perShop[s.shop_slug] || 0) + 1; });
+    series.forEach(function (s) { s.label = seriesLabel(s, perShop); });
+    hist = { series: series, hidden: {}, days: 0, geo: null };
+
+    var ranges = '<div class="theme" role="group" aria-label="Time range">' + RANGES.map(function (r) {
+      return '<button type="button" data-range="' + r[0] + '" aria-pressed="' + (r[0] === 0) + '">' + r[1] + '</button>';
+    }).join('') + '</div>';
+    var key = '<div class="hist-key">' +
+      '<span><svg width="22" height="6" aria-hidden="true"><path d="M0 3H22" stroke="var(--muted)" stroke-width="2"/></svg>buyable</span>' +
+      '<span><svg width="22" height="6" aria-hidden="true"><path d="M0 3H22" stroke="var(--muted)" stroke-width="2" stroke-dasharray="5 4"/></svg>out of stock</span>' +
+      '<span>no line: the shop did not list it</span></div>';
+    histShow(title, grade, '<div class="hist-panel"><div class="hist-ptitle">Price (EUR)</div><div class="hist-chart" id="histChart"></div><div class="hist-tip" id="histTip"></div></div>' +
+      '<div class="hist-legend" id="histLegend"></div>' + key, ranges);
+    bindHistPointer();
+    histPaint();
+  }
+
+  // The part of a series that matters inside [start, end]: entries in it, plus the one whose price is held into it.
+  function windowed(s, start) {
+    return s.entries.filter(function (e, i) { var nx = s.entries[i + 1]; return e.t >= start || (nx && nx.t > start); });
+  }
+  function isOOS(e) { return e.availability === 'out_of_stock'; }
+
+  function histPaint() {
+    hideCross(); // a repaint replaces the svg the pointer was over
+    var h = hist, series = h.series;
+    var tEnd = -Infinity, tFirst = Infinity;
+    series.forEach(function (s) { s.entries.forEach(function (e) { if (e.t > tEnd) tEnd = e.t; if (e.t < tFirst) tFirst = e.t; }); });
+    var start = h.days && tEnd - h.days * DAY_MS > tFirst ? tEnd - h.days * DAY_MS : tFirst;
+    var tMin = start, tMax = tEnd;
+    if (tMax === tMin) { tMin -= DAY_MS / 2; tMax += DAY_MS / 2; } // a single day: centre it
+
+    var shownIdx = [];
+    series.forEach(function (s, i) { if (!h.hidden[i]) shownIdx.push(i); });
+    var scaleIdx = shownIdx.length ? shownIdx : series.map(function (s, i) { return i; }); // nothing shown: keep the full scale
+    var prices = [];
+    scaleIdx.forEach(function (i) { windowed(series[i], start).forEach(function (e) { if (e.listed) prices.push(e.price_cents); }); });
+    if (prices.length === 0) prices.push(0);
+    var ticks = niceTicks(Math.min.apply(null, prices), Math.max.apply(null, prices));
+    var y0 = ticks[0], y1 = ticks[ticks.length - 1];
+    var plotW = HW - HPAD.l - HPAD.r, plotH = HH - HPAD.t - HPAD.b;
+    function X(t) { return HPAD.l + (Math.max(t, tMin) - tMin) / (tMax - tMin) * plotW; }
+    function Y(c) { return HPAD.t + (1 - (c - y0) / (y1 - y0)) * plotH; }
+    function r1(n) { return Math.round(n * 10) / 10; }
+
+    var withYear = tMax - tMin > 300 * DAY_MS;
+    var svg = '<svg viewBox="0 0 ' + HW + ' ' + HH + '" role="img" aria-label="Price history, ' + series.length + ' listing' + (series.length === 1 ? '' : 's') + '">';
+    ticks.forEach(function (c) {
+      svg += '<line class="grid" x1="' + HPAD.l + '" x2="' + (HW - HPAD.r) + '" y1="' + r1(Y(c)) + '" y2="' + r1(Y(c)) + '"/>' +
+        '<text x="' + (HPAD.l - 8) + '" y="' + r1(Y(c) + 4) + '" text-anchor="end">' + eur(c) + '</text>';
+    });
+    for (var i = 0; i <= 5; i++) {
+      var tt = tMin + (tMax - tMin) * i / 5;
+      svg += '<text x="' + r1(X(tt)) + '" y="' + (HH - 8) + '" text-anchor="' + (i === 0 ? 'start' : i === 5 ? 'end' : 'middle') + '">' + fmtDay(tt, withYear) + '</text>';
+    }
+
+    var lines = '', times = {};
+    shownIdx.forEach(function (idx) {
+      var s = series[idx], es = s.entries, color = 'var(--c' + (idx % 8) + ')';
+      function seg(x1, y1, x2, y2, oos) {
+        return '<path class="line' + (oos ? ' oos' : '') + '" data-s="' + idx + '" stroke="' + color + '" d="M' + r1(x1) + ' ' + r1(y1) + 'L' + r1(x2) + ' ' + r1(y2) + '"/>';
+      }
+      es.forEach(function (e, k) {
+        var pv = es[k - 1], nx = es[k + 1];
+        if (e.t >= start) times[e.t] = true;
+        if (!e.listed) return;
+        var y = Y(e.price_cents);
+        if (nx && nx.listed && (e.t >= start || nx.t > start)) {
+          // The price holds until the next run, then steps; the hold is dashed while the shop was out of stock.
+          lines += seg(X(e.t), y, X(nx.t), y, isOOS(e));
+          if (nx.price_cents !== e.price_cents) lines += seg(X(nx.t), y, X(nx.t), Y(nx.price_cents), isOOS(nx));
+        }
+        // A run that stands alone has no segment, so it gets a dot.
+        var alone = !(pv && pv.listed) && !(nx && nx.listed);
+        if (alone && e.t >= start) lines += '<circle class="lone" data-s="' + idx + '" cx="' + r1(X(e.t)) + '" cy="' + r1(y) + '" r="3.5" fill="' + color + '"/>';
+      });
+    });
+    svg += lines + '<g id="histCross" style="display:none"><line class="cross" y1="' + HPAD.t + '" y2="' + (HH - HPAD.b) + '"/></g></svg>';
+    document.getElementById('histChart').innerHTML = svg;
+
+    h.geo = { tMin: tMin, tMax: tMax, X: X, Y: Y, plotW: plotW, shownIdx: shownIdx, start: start,
+      times: Object.keys(times).map(Number).sort(function (a, b) { return a - b; }) };
+
+    // Legend: latest / lowest / highest EUR price in the range, from every line (also hidden ones).
+    var legend = '<div class="lrow lhead"><div>Listing</div><div class="lnum">Latest</div><div class="lnum">Lowest</div><div class="lnum">Highest</div></div>';
+    series.forEach(function (s, idx) {
+      var ps = windowed(s, start).filter(function (e) { return e.listed; }).map(function (e) { return e.price_cents; });
+      var last = ps.length ? eur(ps[ps.length - 1]) : '—', lo = ps.length ? eur(Math.min.apply(null, ps)) : '—', hi = ps.length ? eur(Math.max.apply(null, ps)) : '—';
+      legend += '<div class="lrow' + (h.hidden[idx] ? ' off' : '') + (s.active ? '' : ' gone') + '" data-legend="' + idx + '" title="Click to ' + (h.hidden[idx] ? 'show' : 'hide') + ' this line">' +
+        '<div class="lname"><span class="sw" style="background:var(--c' + (idx % 8) + ')"></span><span class="lt">' + escapeHTML(s.label) + '</span><a class="lopen" href="' + escapeHTML(safeURL(s.url)) + '" target="_blank" rel="noopener" title="Open at the shop" aria-label="Open ' + escapeHTML(s.label) + ' at the shop">&#8599;</a></div>' +
+        '<div class="lnum">' + last + '</div><div class="lnum">' + lo + '</div><div class="lnum">' + hi + '</div></div>';
+    });
+    document.getElementById('histLegend').innerHTML = legend;
+    [].forEach.call(histEl.querySelectorAll('[data-range]'), function (b) {
+      b.setAttribute('aria-pressed', String(Number(b.getAttribute('data-range')) === h.days));
+    });
+  }
+
+  // The entry in effect for a series at time t: the last run at or before t (give or take the gap between shops' runs).
+  function entryAt(s, t) {
+    var last = null;
+    for (var i = 0; i < s.entries.length; i++) { if (s.entries[i].t <= t + TIP_TOLERANCE_MS) last = s.entries[i]; else break; }
+    return last;
+  }
+
+  function hideCross() {
+    var c = document.getElementById('histCross'), tip = document.getElementById('histTip');
+    if (c) c.style.display = 'none';
+    if (tip) tip.className = 'hist-tip';
+    [].forEach.call(document.querySelectorAll('#histChart .hdot'), function (d) { d.parentNode.removeChild(d); });
+  }
+
+  function bindHistPointer() {
+    var chart = document.getElementById('histChart');
+    var panel = chart.parentNode;
+    chart.addEventListener('pointerleave', hideCross);
+    chart.addEventListener('pointermove', function (e) {
+      var h = hist, svg = chart.querySelector('svg');
+      if (!h || !h.geo || !svg || h.geo.times.length === 0) return;
+      var g = h.geo, r = svg.getBoundingClientRect();
+      var vx = (e.clientX - r.left) / r.width * HW;
+      if (vx < HPAD.l - 6 || vx > HW - HPAD.r + 6) { hideCross(); return; }
+      var t = g.tMin + (vx - HPAD.l) / g.plotW * (g.tMax - g.tMin), tn = g.times[0];
+      g.times.forEach(function (x) { if (Math.abs(x - t) < Math.abs(tn - t)) tn = x; });
+
+      var cx = Math.round(g.X(tn) * 10) / 10;
+      var cross = document.getElementById('histCross');
+      cross.style.display = '';
+      var ln = cross.querySelector('line'); ln.setAttribute('x1', cx); ln.setAttribute('x2', cx);
+      [].forEach.call(svg.querySelectorAll('.hdot'), function (d) { d.parentNode.removeChild(d); });
+
+      var rows = [];
+      g.shownIdx.forEach(function (idx) {
+        var s = h.series[idx], en = entryAt(s, tn);
+        if (!en) return; // the listing did not exist yet
+        if (en.listed) {
+          rows.push({ idx: idx, s: s, e: en, price: en.price_cents });
+          var dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          dot.setAttribute('class', 'hdot'); dot.setAttribute('cx', cx); dot.setAttribute('cy', Math.round(g.Y(en.price_cents) * 10) / 10);
+          dot.setAttribute('r', 4.5); dot.setAttribute('fill', 'var(--c' + (idx % 8) + ')'); dot.setAttribute('stroke', 'var(--bg)'); dot.setAttribute('stroke-width', 2);
+          svg.appendChild(dot);
+        } else {
+          rows.push({ idx: idx, s: s, e: en, price: Infinity });
+        }
+      });
+      rows.sort(function (a, b) { return a.price - b.price; });
+      var tip = document.getElementById('histTip');
+      tip.innerHTML = '<div class="when">' + fmtDay(tn, true) + '</div>' + rows.map(function (rw) {
+        var sw = '<span class="sw" style="background:var(--c' + (rw.idx % 8) + ')"></span>', name = '<span class="tname">' + escapeHTML(rw.s.label) + '</span>';
+        if (!rw.e.listed) return '<div class="trow na">' + sw + name + '<span class="tval">not listed</span></div>';
+        var sub = (rw.e.original_price_cents ? formatPrice(rw.e.original_price_cents, rw.e.original_currency) : '') +
+          (isOOS(rw.e) ? (rw.e.original_price_cents ? ', ' : '') + 'out of stock' : rw.e.availability === 'preorder' ? (rw.e.original_price_cents ? ', ' : '') + 'pre-order' : '');
+        return '<div class="trow">' + sw + name + '<span class="tval">' + eur(rw.e.price_cents) + (sub ? '<span class="tsub">' + escapeHTML(sub) + '</span>' : '') + '</span></div>';
+      }).join('');
+      tip.className = 'hist-tip show';
+      var pr = panel.getBoundingClientRect(), px = e.clientX - pr.left, py = e.clientY - pr.top;
+      var left = px + 16;
+      if (left + tip.offsetWidth > pr.width - 4) left = px - 16 - tip.offsetWidth;
+      tip.style.left = Math.max(4, left) + 'px';
+      tip.style.top = Math.max(4, Math.min(py - 10, pr.height - tip.offsetHeight - 4)) + 'px';
+    });
+  }
+
+  // Range buttons, legend selection and emphasis.
+  histEl.addEventListener('click', function (e) {
+    var rb = e.target.closest('[data-range]');
+    if (rb && hist) { hist.days = Number(rb.getAttribute('data-range')); histPaint(); return; }
+    var row = e.target.closest('[data-legend]');
+    if (row && hist && !e.target.closest('a')) {
+      var i = Number(row.getAttribute('data-legend'));
+      if (hist.hidden[i]) delete hist.hidden[i]; else hist.hidden[i] = true;
+      histPaint();
+    }
+  });
+  function emphasize(idx) {
+    [].forEach.call(histEl.querySelectorAll('#histChart [data-s]'), function (el) {
+      el.style.opacity = idx === null || el.getAttribute('data-s') === String(idx) ? '' : '0.15';
+    });
+  }
+  histEl.addEventListener('mouseover', function (e) {
+    var row = e.target.closest ? e.target.closest('[data-legend]') : null;
+    emphasize(row ? Number(row.getAttribute('data-legend')) : null);
+  });
+  histEl.addEventListener('mouseleave', function () { emphasize(null); });
 
   // ---- Near misses ----
   var revKind = document.getElementById('revKind');

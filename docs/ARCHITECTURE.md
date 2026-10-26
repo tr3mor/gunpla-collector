@@ -166,6 +166,35 @@ name, and a shop filter. Each result shows the current price, the lowest
 price ever recorded, and a link to the listing. Prices are shown in EUR
 (see Prices below); the shop's own price is shown next to a converted one.
 
+### Price history
+
+Selecting a result opens a chart of the kit's price over time, one line per
+listing (a listing that belongs to a product opens the whole product, so
+shops that stopped listing it keep their line). The page draws it itself as
+SVG, with no library. The data comes from `GET /api/history`, read-only like
+search, with exactly one of `product=<id>` (every listing of a kit) or
+`set=<id>` (one listing that is not grouped); neither or both is a 400, an
+unknown id a 404.
+
+It returns one series per listing, ordered by shop name then listing name,
+each `{set_id, shop_slug, shop_name, name, url, active, entries}`. An entry
+is one successful run of the listing's shop, from the listing's first record
+on:
+
+- listed: `{at, listed: true, availability, price_cents}` with the price in
+  EUR (`eur_cents`), plus `original_price_cents`/`original_currency` when the
+  shop's price was not in EUR. `out_of_stock` is drawn dashed; `in_stock`,
+  `preorder` and an empty availability count as buyable.
+- not listed: `{at, listed: false}`. A successful run of the shop that has no
+  record for the listing means the shop did not list it, so the line breaks
+  there until a run finds it again. A failed run is not a successful run and
+  leaves no gap. `sets.removed_at` cannot be used for this: it is cleared
+  when a listing returns.
+
+A record with no EUR value (currency without a rate) gives no entry, and is
+not a gap either. Entries for USD shops move with the rate even when the
+shop's price does not; the tooltip shows the shop's own price.
+
 ## Prices and currencies
 
 Every price is converted to EUR once, by `collect`, and stored with the rate

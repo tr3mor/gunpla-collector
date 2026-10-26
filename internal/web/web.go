@@ -26,6 +26,7 @@ var indexHTML []byte
 type Catalog interface {
 	Search(ctx context.Context, f catalog.Filter) ([]store.SetSearchRow, error)
 	Products(ctx context.Context, f catalog.Filter) ([]catalog.Product, error)
+	History(ctx context.Context, productID, setID int64) ([]catalog.Series, error)
 	NearMisses(ctx context.Context, includeDismissed bool) ([]catalog.ReviewRow, error)
 	Link(ctx context.Context, a, b int64) error
 	DismissMatch(ctx context.Context, a, b int64) error
@@ -74,6 +75,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/shops", s.handleShops)
 	mux.HandleFunc("GET /api/search", s.handleSearch)
 	mux.HandleFunc("GET /api/products", s.handleProducts)
+	mux.HandleFunc("GET /api/history", s.handleHistory)
 	mux.HandleFunc("POST /api/watch/preview", s.handleWatchPreview)
 	mux.HandleFunc("GET /api/watches", s.handleWatches)
 	mux.HandleFunc("POST /api/watches", s.write(s.handleWatchSave))
@@ -116,7 +118,10 @@ func (s *Server) handleShops(w http.ResponseWriter, r *http.Request) {
 // searchResultJSON is the wire shape for one row in the search results —
 // deliberately flat (no nested shop object) to keep the frontend simple.
 type searchResultJSON struct {
-	SetID        int64  `json:"set_id"`
+	SetID int64 `json:"set_id"`
+	// ProductID is the kit the listing belongs to; 0 when it is not grouped.
+	// The page opens the whole kit's price history from it.
+	ProductID    int64  `json:"product_id"`
 	ShopSlug     string `json:"shop_slug"`
 	ShopName     string `json:"shop_name"`
 	Name         string `json:"name"`
@@ -163,6 +168,7 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 func (s *Server) toResultJSON(row store.SetSearchRow) searchResultJSON {
 	out := searchResultJSON{
 		SetID:        row.SetID,
+		ProductID:    row.ProductID,
 		ShopSlug:     row.ShopSlug,
 		ShopName:     row.ShopName,
 		Name:         row.Name,

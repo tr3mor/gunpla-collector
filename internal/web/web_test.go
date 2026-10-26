@@ -25,6 +25,8 @@ type fakeCatalog struct {
 	saved    []watchlist.Watch
 	review   []catalog.ReviewRow
 	linked   [][2]int64
+	series   []catalog.Series
+	histArgs [2]int64
 }
 
 func (f *fakeCatalog) Search(ctx context.Context, flt catalog.Filter) ([]store.SetSearchRow, error) {
