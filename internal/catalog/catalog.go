@@ -15,6 +15,7 @@ type Store interface {
 	Listings(ctx context.Context) ([]store.ListingRow, error)
 	InProductTx(ctx context.Context, fn func(*store.ProductTx) error) error
 	SearchSets(ctx context.Context, shopSlug string) ([]store.SetSearchRow, error)
+	History(ctx context.Context, productID, setID int64) ([]store.SetHistory, error)
 
 	// Near-miss review.
 	DismissedMatches(ctx context.Context) (map[[2]int64]bool, error)
