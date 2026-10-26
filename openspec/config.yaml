@@ -1,0 +1,17 @@
+schema: spec-driven
+
+context: |
+  Go CLI backed by a local SQLite file. The tests run offline: scrapers are
+  tested against local httptest servers, never live shops.
+  The developer's local gunpla.db takes about 20 minutes to refill, so never
+  delete or recreate it for testing. Use a temporary database instead.
+  Commit messages use conventional commits: type(scope): subject.
+  Deployment (Docker, cron, Windows scripts, CI) is out of scope for specs.
+
+rules:
+  specs:
+    - Describe behavior a person or downstream system can observe, not Go packages or functions.
+    - Leave tuning values (match thresholds, delays) to scenarios, not requirement text.
+    - When docs/ARCHITECTURE.md and the code disagree, the spec follows the code and the gap is noted.
+  tasks:
+    - Include running `go test ./...` and `go vet ./...` as a task.
