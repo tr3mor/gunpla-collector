@@ -17,8 +17,9 @@ any shop.
 | PlamoDX     | WooCommerce                 | public Store REST API `/wp-json/wc/store/v1/products` (no auth) | `internal/scraper/plamodx.go`       |
 | Zeonmarket  | CCV Shop                    | server-rendered HTML, `/MG?page=N` (12 per page) until an empty page, plus `/Pre-orders` | `internal/scraper/zeonmarket.go` |
 
-All shops are scraped for MG, HG, RG and PG grades. Gundam Store prices are
-in USD; the others are in EUR.
+All shops are scraped for MG, HG, RG and PG grades. Gundam Store is read as a
+customer in the Netherlands, so its prices are in DKK with Dutch VAT included;
+the others are in EUR.
 
 Listings that aren't model kits (Figure-Rise figures, Action Bases,
 expansion/effect/weapon parts sets, 30MM, the Gundam Assemble card game,
@@ -192,7 +193,7 @@ on:
   when a listing returns.
 
 A record with no EUR value (currency without a rate) gives no entry, and is
-not a gap either. Entries for USD shops move with the rate even when the
+not a gap either. Entries for non-EUR shops move with the rate even when the
 shop's price does not; the tooltip shows the shop's own price.
 
 ## Prices and currencies
@@ -204,7 +205,7 @@ used: `price_history` keeps the shop's own `price_cents`/`currency` plus
 network.
 
 - The rate is today's ECB reference rate from frankfurter.dev. If that
-  fails, the previous run's rate is reused; `GUNPLA_USD_EUR_RATE` is only the
+  fails, the previous run's rate is reused; `GUNPLA_DKK_EUR_RATE` is only the
   last resort for a first-ever run. Rates are stored with the data, so a bad
   rate can be found and fixed from the `fx_rate` column.
 - A price change is a change of the shop's own price. Exchange-rate drift

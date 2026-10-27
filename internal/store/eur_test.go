@@ -229,3 +229,37 @@ func TestMigrate_EURPricesOnExistingHistory(t *testing.T) {
 	}
 	check(2, sql.NullInt64{Int64: 9000, Valid: true})
 }
+
+// A Gundam Store price (Dutch market, DKK) converts at the stored DKK rate,
+// both when a run stores it and when the backfill fills a row stored without
+// a rate.
+func TestApplyRun_ConvertsDKKPrice(t *testing.T) {
+	dkk := func(ext string) scraper.ScrapedSet {
+		return scraper.ScrapedSet{ExternalID: ext, URL: "u" + ext, Name: "Kit " + ext, Grade: "MG", PriceCents: 69694, Currency: "DKK"}
+	}
+	f := newEURFixture(t)
+	ctx := context.Background()
+	f.run(fx.Rates{"DKK": 0.134}, dkk("1"))
+
+	rows, err := f.s.SearchSets(ctx, "")
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("SearchSets = %+v, %v", rows, err)
+	}
+	if r := rows[0]; !r.HasEUR || r.EURCents != 9339 || r.CurrentCents != 69694 || r.Currency != "DKK" {
+		t.Errorf("row = %+v, want 69694 DKK as 9339 EUR", r)
+	}
+	if rate, ok, err := f.s.LastRate(ctx, "DKK"); err != nil || !ok || rate != 0.134 {
+		t.Errorf("LastRate = %v, %v, %v; want 0.134", rate, ok, err)
+	}
+
+	f.run(nil, dkk("2")) // stored while the rate was missing
+	if n, err := f.s.BackfillEUR(ctx, fx.Rates{"DKK": 0.134}); err != nil || n != 1 {
+		t.Fatalf("BackfillEUR = %d, %v; want 1 row", n, err)
+	}
+	rows, _ = f.s.SearchSets(ctx, "")
+	for _, r := range rows {
+		if !r.HasEUR || r.EURCents != 9339 {
+			t.Errorf("after backfill: %+v, want 9339 EUR", r)
+		}
+	}
+}

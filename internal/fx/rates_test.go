@@ -3,7 +3,7 @@ package fx
 import "testing"
 
 func TestToEUR(t *testing.T) {
-	r := Rates{"USD": 0.9}
+	r := Rates{"DKK": 0.9}
 	tests := []struct {
 		name     string
 		cents    int
@@ -12,8 +12,8 @@ func TestToEUR(t *testing.T) {
 		wantRate float64
 		wantOK   bool
 	}{
-		{"converts", 10000, "USD", 9000, 0.9, true},
-		{"rounds", 1001, "USD", 901, 0.9, true},
+		{"converts", 10000, "DKK", 9000, 0.9, true},
+		{"rounds", 1001, "DKK", 901, 0.9, true},
 		{"EUR passes through", 500, "EUR", 500, 1, true},
 		{"no rate", 500, "JPY", 0, 0, false},
 	}
@@ -24,7 +24,7 @@ func TestToEUR(t *testing.T) {
 		}
 	}
 	var none Rates
-	if _, _, ok := none.ToEUR(500, "USD"); ok {
+	if _, _, ok := none.ToEUR(500, "DKK"); ok {
 		t.Error("nil rates should not convert USD")
 	}
 	if got, _, ok := none.ToEUR(500, "EUR"); !ok || got != 500 {

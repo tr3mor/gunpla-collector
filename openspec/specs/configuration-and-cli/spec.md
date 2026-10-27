@@ -71,7 +71,7 @@ The program SHALL accept the flags `--shop`, `--force` and `--addr`, each as `--
 - **THEN** that shop is skipped
 
 ### Requirement: Environment variables
-The program SHALL read these variables: `GUNPLA_DB_PATH` (default `/data/gunpla.db`), `GUNPLA_TELEGRAM_BOT_TOKEN`, `GUNPLA_TELEGRAM_CHAT_ID`, `GUNPLA_SHOPS`, `GUNPLA_RUN_TIMEOUT`, `GUNPLA_FORCE`, `GUNPLA_UI_ADDR` (default `:8080`), `GUNPLA_UI_TOKEN` and `GUNPLA_USD_EUR_RATE` (default 0.89). Surrounding spaces SHALL be ignored where a value is parsed.
+The program SHALL read these variables: `GUNPLA_DB_PATH` (default `/data/gunpla.db`), `GUNPLA_TELEGRAM_BOT_TOKEN`, `GUNPLA_TELEGRAM_CHAT_ID`, `GUNPLA_SHOPS`, `GUNPLA_RUN_TIMEOUT`, `GUNPLA_FORCE`, `GUNPLA_UI_ADDR` (default `:8080`), `GUNPLA_UI_TOKEN` and `GUNPLA_DKK_EUR_RATE` (default 0.134). Surrounding spaces SHALL be ignored where a value is parsed.
 
 #### Scenario: Defaults
 - **WHEN** no variable is set
@@ -82,7 +82,7 @@ The program SHALL read these variables: `GUNPLA_DB_PATH` (default `/data/gunpla.
 - **THEN** the token is "abc"
 
 ### Requirement: Bad values fall back instead of failing
-An unparseable or non-positive `GUNPLA_RUN_TIMEOUT` SHALL mean "use the command's default", an unparseable `GUNPLA_FORCE` SHALL mean false, and an unparseable or non-positive `GUNPLA_USD_EUR_RATE` SHALL mean the default rate. None SHALL fail the run.
+An unparseable or non-positive `GUNPLA_RUN_TIMEOUT` SHALL mean "use the command's default", an unparseable `GUNPLA_FORCE` SHALL mean false, and an unparseable or non-positive `GUNPLA_DKK_EUR_RATE` SHALL mean the default rate. None SHALL fail the run.
 
 #### Scenario: Typo in timeout
 - **WHEN** `GUNPLA_RUN_TIMEOUT` is "soon"

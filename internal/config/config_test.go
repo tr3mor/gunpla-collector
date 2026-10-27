@@ -103,8 +103,8 @@ func TestValidateForReport(t *testing.T) {
 }
 
 func TestParseRate(t *testing.T) {
-	for raw, want := range map[string]float64{"": 0.89, "0.91": 0.91, " 0.5 ": 0.5, "abc": 0.89, "-1": 0.89, "0": 0.89} {
-		if got := parseRate(raw, 0.89); got != want {
+	for raw, want := range map[string]float64{"": 0.134, "0.14": 0.14, " 0.5 ": 0.5, "abc": 0.134, "-1": 0.134, "0": 0.134} {
+		if got := parseRate(raw, 0.134); got != want {
 			t.Errorf("parseRate(%q) = %v, want %v", raw, got, want)
 		}
 	}

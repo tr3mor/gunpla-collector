@@ -11,11 +11,15 @@ import (
 )
 
 const (
-	gundamStoreSlug     = "gundamstore"
-	gundamStoreName     = "Gundam Store"
-	gundamStoreHost     = "https://gundam-store.com"
-	gundamStoreBaseURL  = gundamStoreHost + "/collections/mg-master-grade"
-	gundamStoreCurrency = "USD"
+	gundamStoreSlug    = "gundamstore"
+	gundamStoreName    = "Gundam Store"
+	gundamStoreHost    = "https://gundam-store.com"
+	gundamStoreBaseURL = gundamStoreHost + "/collections/mg-master-grade"
+	// gundamStoreCountry makes the store price for a Dutch customer: Shopify
+	// then returns the VAT-inclusive price in DKK (the store's base currency)
+	// instead of the VAT-free US price in USD that a plain request gets.
+	gundamStoreCountry  = "NL"
+	gundamStoreCurrency = "DKK"
 	// Shopify's products.json endpoint caps out at 250 items per page.
 	gundamStorePageLimit = 250
 )
@@ -82,7 +86,7 @@ type shopifyProduct struct {
 
 type shopifyVariant struct {
 	Available bool   `json:"available"`
-	Price     string `json:"price"` // decimal string, e.g. "92.00"
+	Price     string `json:"price"` // decimal string, e.g. "696.94"
 	SKU       string `json:"sku"`   // merchant-assigned, may be blank
 	// Barcode is usually the kit's JAN/EAN. The collection products.json
 	// FetchAll reads leaves it out; only /products/<handle>.json has it.
@@ -97,7 +101,7 @@ type shopifyProductResponse struct {
 // have one; store exclusives (Gundam Base, P-Bandai) often don't.
 func (g *GundamStore) LookupEAN(ctx context.Context, set ScrapedSet) (string, error) {
 	var resp shopifyProductResponse
-	if err := g.fetcher.getJSON(ctx, set.URL+".json", &resp); err != nil {
+	if err := g.fetcher.getJSON(ctx, set.URL+".json?country="+gundamStoreCountry, &resp); err != nil {
 		return "", err
 	}
 	if len(resp.Product.Variants) == 0 {
@@ -111,7 +115,7 @@ func (g *GundamStore) FetchAll(ctx context.Context) ([]ScrapedSet, error) {
 
 	for _, cat := range gundamStoreGradeCollections {
 		for page := 1; ; page++ {
-			pageURL := fmt.Sprintf("%s/collections/%s/products.json?limit=%d&page=%d", g.host, cat.handle, gundamStorePageLimit, page)
+			pageURL := fmt.Sprintf("%s/collections/%s/products.json?limit=%d&page=%d&country=%s", g.host, cat.handle, gundamStorePageLimit, page, gundamStoreCountry)
 			var resp shopifyProductsResponse
 			if err := g.fetcher.getJSON(ctx, pageURL, &resp); err != nil {
 				return nil, fmt.Errorf("collection %s page %d: %w", cat.handle, page, err)
