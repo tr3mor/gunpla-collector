@@ -8,6 +8,8 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -35,6 +37,9 @@ type httpFetcher struct {
 	// retryBackoff is the wait before the first retry; it doubles for each
 	// further one.
 	retryBackoff time.Duration
+	// maxRetryAfter caps how long a Retry-After header can make us wait; 0
+	// means defaultMaxRetryAfter.
+	maxRetryAfter time.Duration
 
 	requested bool // whether get has been called yet — no delay before the first request
 }
@@ -47,10 +52,18 @@ const (
 	defaultRetryBackoff = 2 * time.Second
 )
 
+// defaultMaxRetryAfter bounds a shop's Retry-After so a bogus value can't
+// stall a run for hours; a daily batch job can still afford a couple of minutes.
+const defaultMaxRetryAfter = 2 * time.Minute
+
 // transientError marks a failure worth retrying: a dropped connection or
 // truncated body (e.g. "unexpected EOF"), a timeout, or a 429/5xx response.
 // Anything else (404, oversized body, bad request) fails immediately.
-type transientError struct{ err error }
+// retryAfter is how long the shop asked us to wait, if it said (429/503).
+type transientError struct {
+	err        error
+	retryAfter time.Duration
+}
 
 func (e *transientError) Error() string { return e.err.Error() }
 func (e *transientError) Unwrap() error { return e.err }
@@ -77,7 +90,11 @@ func (f *httpFetcher) get(ctx context.Context, url string) ([]byte, error) {
 		if attempt >= f.retries || ctx.Err() != nil || !errors.As(err, &tr) {
 			return nil, err
 		}
-		if err := sleepCtx(ctx, backoff); err != nil {
+		wait := backoff
+		if tr.retryAfter > wait {
+			wait = min(tr.retryAfter, f.maxRetryAfterOrDefault())
+		}
+		if err := sleepCtx(ctx, wait); err != nil {
 			return nil, err
 		}
 		backoff *= 2
@@ -98,13 +115,13 @@ func (f *httpFetcher) getOnce(ctx context.Context, url string) ([]byte, error) {
 
 	resp, err := f.httpClient.Do(req)
 	if err != nil {
-		return nil, &transientError{err}
+		return nil, &transientError{err: err}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		err := fmt.Errorf("unexpected status %d from %s", resp.StatusCode, url)
 		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
-			return nil, &transientError{err}
+			return nil, &transientError{err: err, retryAfter: parseRetryAfter(resp.Header.Get("Retry-After"), time.Now())}
 		}
 		return nil, err
 	}
@@ -117,12 +134,37 @@ func (f *httpFetcher) getOnce(ctx context.Context, url string) ([]byte, error) {
 	// without buffering a potentially huge body first.
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	if err != nil {
-		return nil, &transientError{fmt.Errorf("read response from %s: %w", url, err)}
+		return nil, &transientError{err: fmt.Errorf("read response from %s: %w", url, err)}
 	}
 	if int64(len(body)) > maxBody {
 		return nil, fmt.Errorf("response from %s exceeds %d byte limit", url, maxBody)
 	}
 	return body, nil
+}
+
+func (f *httpFetcher) maxRetryAfterOrDefault() time.Duration {
+	if f.maxRetryAfter > 0 {
+		return f.maxRetryAfter
+	}
+	return defaultMaxRetryAfter
+}
+
+// parseRetryAfter reads a Retry-After header, which is either a number of
+// seconds or an HTTP date. Missing, invalid, zero or past values give 0.
+func parseRetryAfter(raw string, now time.Time) time.Duration {
+	raw = strings.TrimSpace(raw)
+	if secs, err := strconv.Atoi(raw); err == nil {
+		if secs <= 0 {
+			return 0
+		}
+		return time.Duration(secs) * time.Second
+	}
+	if at, err := http.ParseTime(raw); err == nil {
+		if d := at.Sub(now); d > 0 {
+			return d
+		}
+	}
+	return 0
 }
 
 // getJSON fetches url via get and decodes the body as JSON into v.

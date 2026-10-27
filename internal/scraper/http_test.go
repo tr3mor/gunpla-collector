@@ -142,3 +142,76 @@ func TestHTTPFetcher_Get_DoesNotRetryClientError(t *testing.T) {
 		t.Errorf("calls = %d, want 1", calls)
 	}
 }
+
+// A 429 with Retry-After must be waited out for at least that long, not
+// retried after the (much shorter) backoff.
+func TestHTTPFetcher_Get_HonorsRetryAfter(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	start := time.Now()
+	body, err := retryFetcher(srv, 1).get(context.Background(), srv.URL)
+	if err != nil || string(body) != "ok" {
+		t.Fatalf("get = %q, %v; want ok after the wait", body, err)
+	}
+	if elapsed := time.Since(start); elapsed < time.Second {
+		t.Errorf("retried after %v, want at least the 1s Retry-After", elapsed)
+	}
+}
+
+// A huge Retry-After must not stall a run for hours: the wait is capped, and
+// the request is still retried afterwards.
+func TestHTTPFetcher_Get_CapsRetryAfter(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			w.Header().Set("Retry-After", "86400")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	f := retryFetcher(srv, 1)
+	f.maxRetryAfter = 20 * time.Millisecond
+	start := time.Now()
+	if _, err := f.get(context.Background(), srv.URL); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("waited %v, want the wait capped near 20ms", elapsed)
+	}
+}
+
+func TestParseRetryAfter(t *testing.T) {
+	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		raw  string
+		want time.Duration
+	}{
+		{"60", 60 * time.Second},
+		{" 5 ", 5 * time.Second},
+		{"0", 0},
+		{"-3", 0},
+		{"soon", 0},
+		{"", 0},
+		{now.Add(90 * time.Second).Format(http.TimeFormat), 90 * time.Second},
+		{now.Add(-time.Minute).Format(http.TimeFormat), 0},
+	}
+	for _, tt := range tests {
+		if got := parseRetryAfter(tt.raw, now); got != tt.want {
+			t.Errorf("parseRetryAfter(%q) = %v, want %v", tt.raw, got, tt.want)
+		}
+	}
+}
