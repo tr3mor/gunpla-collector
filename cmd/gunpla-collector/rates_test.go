@@ -22,25 +22,25 @@ func TestLoadRates_LiveThenLastStoredThenFallback(t *testing.T) {
 	}
 	defer db.Close()
 	down := func(context.Context) (fx.Rates, error) { return nil, errors.New("ecb down") }
-	up := func(context.Context) (fx.Rates, error) { return fx.Rates{"USD": 0.91}, nil }
+	up := func(context.Context) (fx.Rates, error) { return fx.Rates{"DKK": 0.14}, nil }
 
 	// Nothing stored yet and the lookup fails: the configured fallback.
-	if got := loadRates(ctx, db, down, 0.89, logger); got["USD"] != 0.89 {
-		t.Errorf("first run, ECB down: got %v, want the 0.89 fallback", got)
+	if got := loadRates(ctx, db, down, 0.134, logger); got["DKK"] != 0.134 {
+		t.Errorf("first run, ECB down: got %v, want the 0.134 fallback", got)
 	}
 	// The live rate wins, and a run stores prices with it.
-	if got := loadRates(ctx, db, up, 0.89, logger); got["USD"] != 0.91 {
-		t.Errorf("ECB up: got %v, want 0.91", got)
+	if got := loadRates(ctx, db, up, 0.134, logger); got["DKK"] != 0.14 {
+		t.Errorf("ECB up: got %v, want 0.14", got)
 	}
 	shop, _ := db.GetOrCreateShop(ctx, "us", "US", "https://us")
 	run, _ := db.StartRun(ctx, shop.ID, "2026-01-01T00:00:00Z")
-	set := scraper.ScrapedSet{ExternalID: "1", URL: "u", Name: "Kit", PriceCents: 10000, Currency: "USD"}
-	if err := db.ApplyRun(ctx, shop.ID, run, []scraper.ScrapedSet{set}, "2026-01-01T00:01:00Z", fx.Rates{"USD": 0.91}); err != nil {
+	set := scraper.ScrapedSet{ExternalID: "1", URL: "u", Name: "Kit", PriceCents: 10000, Currency: "DKK"}
+	if err := db.ApplyRun(ctx, shop.ID, run, []scraper.ScrapedSet{set}, "2026-01-01T00:01:00Z", fx.Rates{"DKK": 0.14}); err != nil {
 		t.Fatal(err)
 	}
 	// ECB down again: reuse what the last run stored, not the fallback.
-	if got := loadRates(ctx, db, down, 0.89, logger); got["USD"] != 0.91 {
-		t.Errorf("ECB down after a run: got %v, want the stored 0.91", got)
+	if got := loadRates(ctx, db, down, 0.134, logger); got["DKK"] != 0.14 {
+		t.Errorf("ECB down after a run: got %v, want the stored 0.14", got)
 	}
 }
 
@@ -54,13 +54,13 @@ func TestLoadRates_BackfillsOlderRows(t *testing.T) {
 	defer db.Close()
 	shop, _ := db.GetOrCreateShop(ctx, "us", "US", "https://us")
 	run, _ := db.StartRun(ctx, shop.ID, "2026-01-01T00:00:00Z")
-	set := scraper.ScrapedSet{ExternalID: "1", URL: "u", Name: "Kit", PriceCents: 10000, Currency: "USD"}
+	set := scraper.ScrapedSet{ExternalID: "1", URL: "u", Name: "Kit", PriceCents: 10000, Currency: "DKK"}
 	if err := db.ApplyRun(ctx, shop.ID, run, []scraper.ScrapedSet{set}, "2026-01-01T00:01:00Z", nil); err != nil {
 		t.Fatal(err)
 	}
-	loadRates(ctx, db, func(context.Context) (fx.Rates, error) { return fx.Rates{"USD": 0.9}, nil }, 0.89, logger)
+	loadRates(ctx, db, func(context.Context) (fx.Rates, error) { return fx.Rates{"DKK": 0.15}, nil }, 0.134, logger)
 	rows, err := db.SearchSets(ctx, "")
-	if err != nil || len(rows) != 1 || !rows[0].HasEUR || rows[0].EURCents != 9000 {
-		t.Errorf("rows = %+v, err = %v; want the old USD row backfilled to €90.00", rows, err)
+	if err != nil || len(rows) != 1 || !rows[0].HasEUR || rows[0].EURCents != 1500 {
+		t.Errorf("rows = %+v, err = %v; want the old DKK row backfilled to €15.00", rows, err)
 	}
 }

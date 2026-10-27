@@ -13,21 +13,21 @@ import (
 // stored with, so a bad rate would stay in history; hence the order: today's
 // live ECB rate, else the rate the last run used, else the configured
 // fallback (only ever reached on the very first run).
-func loadRates(ctx context.Context, db *store.Store, live func(context.Context) (fx.Rates, error), fallbackUSD float64, logger *slog.Logger) fx.Rates {
+func loadRates(ctx context.Context, db *store.Store, live func(context.Context) (fx.Rates, error), fallbackDKK float64, logger *slog.Logger) fx.Rates {
 	rates, err := live(ctx)
 	if err == nil {
-		logger.Info("using live USD/EUR rate", "rate", rates["USD"])
+		logger.Info("using live DKK/EUR rate", "rate", rates["DKK"])
 	} else {
-		last, ok, lerr := db.LastRate(ctx, "USD")
+		last, ok, lerr := db.LastRate(ctx, "DKK")
 		if lerr != nil {
-			logger.Warn("could not read the last stored USD/EUR rate", "error", lerr)
+			logger.Warn("could not read the last stored DKK/EUR rate", "error", lerr)
 		}
 		if ok {
-			rates = fx.Rates{"USD": last}
-			logger.Warn("could not fetch live USD/EUR rate, reusing the last one stored", "rate", last, "error", err)
+			rates = fx.Rates{"DKK": last}
+			logger.Warn("could not fetch live DKK/EUR rate, reusing the last one stored", "rate", last, "error", err)
 		} else {
-			rates = fx.Rates{"USD": fallbackUSD}
-			logger.Warn("could not fetch live USD/EUR rate, using the configured fallback", "rate", fallbackUSD, "error", err)
+			rates = fx.Rates{"DKK": fallbackDKK}
+			logger.Warn("could not fetch live DKK/EUR rate, using the configured fallback", "rate", fallbackDKK, "error", err)
 		}
 	}
 	if n, err := db.BackfillEUR(ctx, rates); err != nil {

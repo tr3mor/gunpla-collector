@@ -131,7 +131,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		opts := collector.Options{Force: flags.force || cfg.Force, Rates: loadRates(ctx, db, fx.Live, cfg.USDToEUR, logger)}
+		opts := collector.Options{Force: flags.force || cfg.Force, Rates: loadRates(ctx, db, fx.Live, cfg.DKKToEUR, logger)}
 		var firstErr error
 		for _, shop := range shops {
 			s, ok := scraper.Get(shop.Slug)

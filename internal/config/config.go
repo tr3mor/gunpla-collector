@@ -25,15 +25,15 @@ type Config struct {
 	// UIToken, if set, is required (as a bearer token) for changes made
 	// through the UI: watches and near-miss decisions. Reading stays open.
 	UIToken string
-	// USDToEUR is the fallback USD->EUR rate, used only when the live rate
+	// DKKToEUR is the fallback DKK->EUR rate, used only when the live rate
 	// can't be fetched at startup (see package fx).
-	USDToEUR float64
+	DKKToEUR float64
 }
 
-// defaultUSDToEUR is the fallback USD->EUR rate (ECB reference, Oct 2026),
+// defaultDKKToEUR is the fallback DKK->EUR rate (ECB reference, Oct 2026),
 // used if the live lookup at startup fails. Override with
-// GUNPLA_USD_EUR_RATE.
-const defaultUSDToEUR = 0.89
+// GUNPLA_DKK_EUR_RATE.
+const defaultDKKToEUR = 0.134
 
 // parseRate parses a positive exchange rate; empty or invalid falls back.
 func parseRate(raw string, fallback float64) float64 {
@@ -54,7 +54,7 @@ func Load() Config {
 		Force:          parseBool(os.Getenv("GUNPLA_FORCE")),
 		UIAddr:         getEnv("GUNPLA_UI_ADDR", ":8080"),
 		UIToken:        strings.TrimSpace(os.Getenv("GUNPLA_UI_TOKEN")),
-		USDToEUR:       parseRate(os.Getenv("GUNPLA_USD_EUR_RATE"), defaultUSDToEUR),
+		DKKToEUR:       parseRate(os.Getenv("GUNPLA_DKK_EUR_RATE"), defaultDKKToEUR),
 	}
 }
 

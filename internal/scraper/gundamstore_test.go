@@ -9,6 +9,18 @@ import (
 	"testing"
 )
 
+// requireNL fails the test when a request doesn't ask for the Dutch market,
+// which is what makes the store return VAT-inclusive DKK prices.
+func requireNL(t *testing.T, next http.Handler) http.Handler {
+	t.Helper()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("country"); got != "NL" {
+			t.Errorf("%s: country = %q, want NL", r.URL, got)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func TestGundamStore_FetchAll(t *testing.T) {
 	mux := http.NewServeMux()
 
@@ -16,7 +28,7 @@ func TestGundamStore_FetchAll(t *testing.T) {
 		switch r.URL.Query().Get("page") {
 		case "1":
 			w.Write([]byte(`{"products": [
-				{"id": 101, "title": "MG One", "handle": "mg-one", "variants": [{"available": true, "price": "92.00", "sku": "sku-101", "barcode": "ean-101"}]},
+				{"id": 101, "title": "MG One", "handle": "mg-one", "variants": [{"available": true, "price": "696.94", "sku": "sku-101", "barcode": "ean-101"}]},
 				{"id": 102, "title": "MG Two", "handle": "mg-two", "variants": [{"available": false, "price": "54.99"}]}
 			]}`))
 		default:
@@ -40,7 +52,7 @@ func TestGundamStore_FetchAll(t *testing.T) {
 		w.Write([]byte(`{"products": []}`))
 	})
 
-	srv := httptest.NewServer(mux)
+	srv := httptest.NewServer(requireNL(t, mux))
 	defer srv.Close()
 
 	g := &GundamStore{
@@ -66,7 +78,7 @@ func TestGundamStore_FetchAll(t *testing.T) {
 	if !ok {
 		t.Fatal("missing set 101")
 	}
-	if one.Name != "MG One" || one.Grade != "MG" || one.PriceCents != 9200 || one.Currency != "USD" {
+	if one.Name != "MG One" || one.Grade != "MG" || one.PriceCents != 69694 || one.Currency != "DKK" {
 		t.Errorf("set 101 = %+v, unexpected fields", one)
 	}
 	if one.Availability != AvailabilityInStock {
@@ -127,7 +139,7 @@ func TestGundamStore_FetchAll_PaginatesUntilShortPage(t *testing.T) {
 		})
 	}
 
-	srv := httptest.NewServer(mux)
+	srv := httptest.NewServer(requireNL(t, mux))
 	defer srv.Close()
 
 	g := &GundamStore{
@@ -150,7 +162,7 @@ func TestGundamStore_FetchAll_NoProductsIsError(t *testing.T) {
 	mux.HandleFunc("/collections/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"products": []}`))
 	})
-	srv := httptest.NewServer(mux)
+	srv := httptest.NewServer(requireNL(t, mux))
 	defer srv.Close()
 
 	g := &GundamStore{
@@ -172,7 +184,7 @@ func TestGundamStore_LookupEAN(t *testing.T) {
 	mux.HandleFunc("/products/gb-limited.json", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"product": {"id": 102, "handle": "gb-limited", "variants": [{"barcode": null, "sku": "GB 1"}]}}`))
 	})
-	srv := httptest.NewServer(mux)
+	srv := httptest.NewServer(requireNL(t, mux))
 	defer srv.Close()
 
 	g := &GundamStore{fetcher: httpFetcher{httpClient: srv.Client(), userAgent: "test"}, host: srv.URL}

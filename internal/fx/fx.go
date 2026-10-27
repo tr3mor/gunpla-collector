@@ -12,8 +12,8 @@ import (
 	"time"
 )
 
-// latestUSDToEURURL serves the ECB's daily reference rate; free, no key.
-const latestUSDToEURURL = "https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR"
+// latestDKKToEURURL serves the ECB's daily reference rate; free, no key.
+const latestDKKToEURURL = "https://api.frankfurter.dev/v1/latest?base=DKK&symbols=EUR"
 
 // fetchTimeout bounds the lookup so an unreachable API can't stall `collect`.
 const fetchTimeout = 5 * time.Second
@@ -35,17 +35,17 @@ func (r Rates) ToEUR(cents int, currency string) (eurCents int, rate float64, ok
 	return int(math.Round(float64(cents) * rate)), rate, true
 }
 
-// Live returns today's USD->EUR rate from the ECB reference rates. An
+// Live returns today's DKK->EUR rate from the ECB reference rates. An
 // error means the caller should fall back to a rate it already knows.
 func Live(ctx context.Context) (Rates, error) {
-	rate, err := fetchUSDToEUR(ctx, http.DefaultClient, latestUSDToEURURL)
+	rate, err := fetchDKKToEUR(ctx, http.DefaultClient, latestDKKToEURURL)
 	if err != nil {
 		return nil, err
 	}
-	return Rates{"USD": rate}, nil
+	return Rates{"DKK": rate}, nil
 }
 
-func fetchUSDToEUR(ctx context.Context, client *http.Client, url string) (float64, error) {
+func fetchDKKToEUR(ctx context.Context, client *http.Client, url string) (float64, error) {
 	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -67,10 +67,10 @@ func fetchUSDToEUR(ctx context.Context, client *http.Client, url string) (float6
 		return 0, fmt.Errorf("decode response: %w", err)
 	}
 	rate := body.Rates["EUR"]
-	// Sanity bounds: catches a missing field (0) or a garbled response
-	// without hard-coding where the dollar "should" be.
-	if rate < 0.3 || rate > 3 {
-		return 0, fmt.Errorf("implausible USD/EUR rate %v", rate)
+	// Sanity bounds: catches a missing field (0) or a garbled response. The
+	// krone is pegged to the euro (about 0.134), so a narrow range is safe.
+	if rate < 0.05 || rate > 0.5 {
+		return 0, fmt.Errorf("implausible DKK/EUR rate %v", rate)
 	}
 	return rate, nil
 }
